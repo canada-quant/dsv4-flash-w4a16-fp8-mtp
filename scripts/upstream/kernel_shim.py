@@ -40,42 +40,52 @@ def sparse_attn(
     q: torch.Tensor,         # [b, s, h, d]
     kv: torch.Tensor,        # [b, kv_len, d_kv]  (kv_len = window + compressed positions)
     attn_sink: torch.Tensor, # [h]   per-head learnable sink bias
-    topk_idxs: torch.Tensor, # [b, s, k]  int indices into kv along its 1st dim
+    topk_idxs: torch.Tensor, # [b, s, k]  int indices into kv; -1 marks invalid (masked)
     softmax_scale: float,
 ) -> torch.Tensor:
     """Sparse multi-head attention reference implementation.
 
-    Strategy: gather the topk KV rows per query position, expand to per-head,
-    score with q @ k^T, add attn_sink as an extra column (softmax over k+1),
-    weighted sum the values.
+    Strategy: gather the topk KV rows per query position, score with q @ k^T
+    per head, add ``attn_sink`` as an extra column (softmax over k+1, drop
+    the sink output), weighted sum the values.
+
+    Invalid positions (``topk_idxs == -1`` — produced by
+    ``get_window_topk_idxs`` and ``get_compress_topk_idxs`` for query
+    positions outside the causal/compress window) are clamped to 0 for the
+    gather and then masked out of the attention scores with ``-inf`` so they
+    contribute zero after softmax.
     """
     b, s, h, d = q.shape
     _, kv_len, d_kv = kv.shape
     k = topk_idxs.shape[-1]
     if d != d_kv:
-        # Upstream uses MLA-style projections where d_kv == d; if they differ we
-        # would need a separate v_proj. Calibration path here uses upstream's
-        # MLA so d == d_kv.
+        # Upstream uses MLA-style projections where d_kv == d.
         raise ValueError(f"sparse_attn shim: d={d} != d_kv={d_kv}; verify caller")
 
-    # Gather [b, s, k, d_kv] — broadcast topk_idxs into a position index
-    idx = topk_idxs.unsqueeze(-1).expand(b, s, k, d_kv)  # [b, s, k, d_kv]
+    invalid_mask = topk_idxs < 0  # [b, s, k]
+    safe_idxs = topk_idxs.clamp(min=0)
+
+    idx = safe_idxs.unsqueeze(-1).expand(b, s, k, d_kv)
     kv_expand = kv.unsqueeze(1).expand(b, s, kv_len, d_kv)
     gathered = torch.gather(kv_expand, 2, idx)  # [b, s, k, d_kv]
 
-    # Per-head scores: [b, s, h, k]
-    # Reshape gathered for matmul: q [b, s, h, d] x k^T [b, s, d, k]
-    g_kT = gathered.unsqueeze(2).transpose(-1, -2)  # [b, s, 1, d, k]
-    scores = (q.unsqueeze(-2) @ g_kT).squeeze(-2) * softmax_scale  # [b, s, h, k]
+    # Run the score+softmax in float32 for stability with -inf masking,
+    # then cast attention weights back to q.dtype for the final matmul.
+    out_dtype = q.dtype
+    qf = q.float()
+    gf = gathered.float()
+    sinkf = attn_sink.float()
 
-    # Append attn_sink as an extra logit column (softmax over k+1, drop the sink output)
-    sink_col = attn_sink.view(1, 1, h, 1).expand(b, s, h, 1)
+    g_kT = gf.unsqueeze(2).transpose(-1, -2)               # [b, s, 1, d, k]
+    scores = (qf.unsqueeze(-2) @ g_kT).squeeze(-2) * softmax_scale  # [b, s, h, k]
+    scores = scores.masked_fill(invalid_mask.unsqueeze(-2), float("-inf"))
+
+    sink_col = sinkf.view(1, 1, h, 1).expand(b, s, h, 1)
     scores_aug = torch.cat([scores, sink_col], dim=-1)
-    attn = F.softmax(scores_aug, dim=-1)[..., :k]  # drop sink mass
+    attn = F.softmax(scores_aug, dim=-1)[..., :k]          # [b, s, h, k] fp32
 
-    # Weighted sum: [b, s, h, k] @ [b, s, k, d_kv] -> [b, s, h, d]
-    out = attn.unsqueeze(-2) @ gathered.unsqueeze(2)  # [b, s, h, 1, d_kv]
-    return out.squeeze(-2)
+    out = attn.unsqueeze(-2) @ gf.unsqueeze(2)             # [b, s, h, 1, d_kv]
+    return out.squeeze(-2).to(out_dtype)
 
 
 # -------- hc_split_sinkhorn --------

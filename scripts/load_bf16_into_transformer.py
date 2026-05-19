@@ -59,6 +59,15 @@ RENAME_RULES = [
     ("shared_head.norm.weight", "norm.weight"),
 ]
 
+# Parameter aliases: nn.Module attribute assignment makes mtp[0].embed and
+# self.embed reference the same Parameter; state_dict() lists both names but
+# loading one implicitly loads the other. Treat the second name as already
+# satisfied once the first is in the safetensors.
+PARAM_ALIASES = {
+    "mtp.0.embed.weight": "embed.weight",
+    "mtp.0.head.weight": "head.weight",
+}
+
 
 def maybe_rename(name: str) -> str:
     for src, dst in RENAME_RULES:
@@ -103,13 +112,16 @@ def load_safetensors_into(
                 if verbose and loaded % 5000 == 0:
                     print(f"  loaded {loaded} tensors...", flush=True)
 
-    state_after = transformer.state_dict()
-    # A 'missing' param has the same .data_ptr() as at init time — meaning
-    # nothing copied into it. Use a sentinel: compare the param's sum to a
-    # known-init value? Simpler heuristic: any state_key not seen in any
-    # shard is missing.
-    seen_state_keys = {maybe_rename(n) for s in weights_dir.glob("*.safetensors")
-                       for n in safe_open(s, framework="pt", device="cpu").keys()}
+    # 'missing' = a model param whose name isn't covered by any safetensors
+    # key (after rename) AND isn't a known alias.
+    seen_state_keys: set[str] = set()
+    for s in weights_dir.glob("*.safetensors"):
+        with safe_open(s, framework="pt", device="cpu") as f:
+            for raw in f.keys():
+                seen_state_keys.add(maybe_rename(raw))
+    seen_state_keys.update(
+        alias for alias, src in PARAM_ALIASES.items() if src in seen_state_keys
+    )
     missing = sorted(state_keys - seen_state_keys)
     return loaded, unmatched, missing
 
