@@ -45,12 +45,42 @@ Three resolutions, in increasing scope:
       the MTP block alone, fed with hidden_states captured during pass one.
       Most decoupled but doubles the calibration wall-clock.
 
-Approach (1) is the planned path. Filling in `MTPLayer` requires reading the
-upstream `inference/model.py` to learn the exact wiring of e_proj, h_proj,
-hc_0..3 (hypercompressed vocab projection), enorm/hnorm, attn_sink, and the
-ffn.gate / ffn.shared_experts / ffn.experts layout. That work is the next
-piece of this script; it is intentionally deferred from this commit so the
-scaffold can land and Phase 1 results can be inspected first.
+Approach (1) is the planned path.
+
+MTPBlock structure (extracted from upstream inference/model.py, 2026-05-19):
+
+    class MTPBlock(Block):
+        e_proj      Linear(dim, dim)      # quantize FP8_BLOCK
+        h_proj      Linear(dim, dim)      # quantize FP8_BLOCK
+        enorm       RMSNorm               # ignore (BF16)
+        hnorm       RMSNorm               # ignore
+        norm        RMSNorm               # ignore
+        hc_head_fn   FP32 param            # ignore
+        hc_head_base FP32 param            # ignore
+        hc_head_scale FP32 param           # ignore
+        embed, head  aliases to main model # shared, do not duplicate
+
+    class Block (parent of MTPBlock):
+        attn        Attention              # FP8_BLOCK on wq_a/wq_b/wkv/wo_a/wo_b
+        ffn         MoE                    # W4A16 on experts.*.w1/w2/w3
+        attn_norm   RMSNorm                # ignore
+        ffn_norm    RMSNorm                # ignore
+        hc_attn_fn/base/scale FP32 params  # ignore (hyper-connection)
+        hc_ffn_fn/base/scale  FP32 params  # ignore
+
+    class Attention (used by both):
+        wq_a, wq_b, wkv, wo_a, wo_b  Linear in FP8_BLOCK
+        q_norm, kv_norm              RMSNorm
+        attn_sink                    FP32 param
+        compressor                   nested submodule (wkv, wgate, norm)
+        indexer                      nested submodule (wq_b, weights_proj, compressor)
+
+The non-standard `hc_pre` / `hc_post` hyper-connection ops in Block.forward
+do NOT contain any Linear modules — they are pure tensor algebra over
+hc_attn_fn, hc_attn_base, hc_attn_scale parameters. GPTQ will not need to
+hook them. The MTP shim therefore only needs to make the Linear modules
+reachable by `model.named_modules()` and produce reasonable activations
+during the calibration forward.
 
 Recipe topology (target)
 ------------------------
