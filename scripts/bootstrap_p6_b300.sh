@@ -100,18 +100,44 @@ if [[ ! -f /data/venv-serve/bin/python ]]; then
 fi
 # shellcheck source=/dev/null
 source /data/venv-serve/bin/activate
-pip install --quiet --upgrade pip wheel setuptools
+pip install --quiet --upgrade pip wheel
+# Pin setuptools to <78: jasl/vllm's pyproject.toml uses both
+# project.license.file AND project.license.text, which setuptools 78+ rejects
+# (PEP 639 strict). Older setuptools accepts the mixed form.
+pip install --quiet "setuptools<78"
 pip install --quiet --index-url https://download.pytorch.org/whl/cu130 torch
-# vLLM build prerequisites (must be in the venv pre-build for --no-build-isolation)
+# Build prerequisites (visible to cmake via --no-build-isolation)
 pip install --quiet ninja cmake "numpy<3" pybind11 packaging setuptools-scm
-# vLLM source build — --no-build-isolation so cmake can find the venv's torch
-# (default isolated build pulls a pip-side torch which mismatches CUDA arch).
-# CUDA_HOME / nvcc / TORCH_CUDA_ARCH_LIST set above.
+#
+# NOTE — CUDA toolkit completeness:
+# vLLM source build via the DLAMI-bundled CUDA at /opt/pytorch/cuda fails
+# because the bundle ships .so.13 files but no unversioned .so symlinks
+# (e.g., libnvrtc.so, libcudart.so), and the lib/ dir is not at lib64/.
+# Investigated 2026-05-19:
+#   1. ld: cannot find -lcudadevrt  ->  fixed with `sudo ln -sfn lib /opt/pytorch/cuda/lib64`
+#   2. CUDA_nvrtc_LIBRARY NOTFOUND  ->  needs `libnvrtc.so` symlink to `libnvrtc.so.13`
+#   3. probably more missing symlinks beyond that
+# Cleanest fix: install the standard NVIDIA CUDA toolkit alongside, which
+# provides /usr/local/cuda with full and properly-symlinked libs.
+#   sudo apt-get install -y cuda-toolkit-13-0
+# Then point CUDA_HOME=/usr/local/cuda for the vLLM build (keep
+# /opt/pytorch's torch — it works against the system CUDA at runtime).
+#
+# Until that step is taken, the block below WILL FAIL. Leaving it staged so
+# a future session can flip the CUDA_HOME and rerun.
 export TORCH_CUDA_ARCH_LIST="10.0a"
 export MAX_JOBS=${MAX_JOBS:-32}
-pip install --no-build-isolation -v \
-    "git+https://github.com/jasl/vllm.git@$VLLM_SHA" 2>&1 | \
-    tee /tmp/vllm_build.log
+export CMAKE_ARGS="-DCUDA_TOOLKIT_ROOT_DIR=$CUDA_HOME -DCMAKE_CUDA_COMPILER=$CUDA_HOME/bin/nvcc"
+
+# Clone jasl/vllm into /data/src/vllm if not present, so it survives instance
+# stop and can be edited locally if pyproject quirks need patching.
+mkdir -p /data/src
+[[ -d /data/src/vllm/.git ]] || git clone https://github.com/jasl/vllm.git /data/src/vllm
+cd /data/src/vllm
+git fetch --depth=1 origin "$VLLM_SHA"
+git checkout "$VLLM_SHA"
+
+pip install --no-build-isolation -v -e /data/src/vllm 2>&1 | tee /tmp/vllm_build.log
 deactivate
 echo "[ok] venv-serve ready"
 
