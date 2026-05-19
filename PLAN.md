@@ -1,5 +1,7 @@
 # PLAN — DeepSeek-V4-Flash W4A16-FP8 + MTP re-quant
 
+> **Status snapshot (2026-05-19):** Phases 0–3 ✓ done. Phase 4 in progress (cuda-toolkit-13-0 installing). The W4A16-FP8+MTP artifact exists at `/scratch/weights/w4a16-fp8-mtp` (146 GB, MTP gate passes), produced via `model_free_ptq` (RTN) rather than the GPTQ path the original plan called for. The GPTQ refinement is scaffolded in `scripts/upstream/` + `PHASE2_DESIGN.md` for a follow-up session.
+
 **Goal:** Republish `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K on Blackwell DC.
 
 **Hardware:** AWS `p6-b300.48xlarge` — 8× B300 (Blackwell DC, SM 10.0, 275 GB HBM3e per GPU verified, 2,200 GB total).
