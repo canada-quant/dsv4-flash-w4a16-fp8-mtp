@@ -1,6 +1,18 @@
---- /workspace/.venv-quant/lib/python3.13/site-packages/transformers/models/deepseek_v4/modeling_deepseek_v4.py.bak	2026-05-01 22:02:18.850979132 +0000
-+++ /workspace/.venv-quant/lib/python3.13/site-packages/transformers/models/deepseek_v4/modeling_deepseek_v4.py	2026-05-01 22:02:18.864533083 +0000
-@@ -1177,12 +1177,18 @@
+--- a/transformers/models/deepseek_v4/modeling_deepseek_v4.py	2026-05-19 17:36:49.459986551 +0000
++++ b/transformers/models/deepseek_v4/modeling_deepseek_v4.py	2026-05-19 17:36:49.481888621 +0000
+@@ -1190,7 +1190,10 @@
+         "post_attention_layernorm",
+         "norm",
+     ]
+-    _keys_to_ignore_on_load_unexpected = [r"(^|\.)mtp\..*"]
++    # PATCH (paul/dsv4 mtp-retention): the upstream regex tells from_pretrained
++    # to *silently drop* every mtp.* key. We need them preserved for the W4A16-FP8
++    # + MTP calibration. Setting to [] keeps the architecture without dropping keys.
++    _keys_to_ignore_on_load_unexpected = []
+     # ``_is_stateful`` opts out of generation modes that need to roll the cache
+     # back across drafts (assisted generation, prompt lookup, contrastive search).
+     # The compressor's running-window state isn't rewindable, so `generate`
+@@ -1268,12 +1271,17 @@
          if (input_ids is None) ^ (inputs_embeds is not None):
              raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
          return_cache = past_key_values if use_cache else None
@@ -12,8 +24,7 @@
 +        # the V4-Flash config has layer_types=None, so DynamicCache(config=...)
 +        # falls back to generic DynamicLayer which lacks store_compression_weights.
 +        # With past_key_values=None, compressor.forward takes the cache_layer-is-None
-+        # path (line 590-593 here) which does not require V4-specific layer methods.
-+        # Original line: past_key_values = DynamicCache(config=self.config)
++        # path which does not require V4-specific layer methods.
          if inputs_embeds is None:
              inputs_embeds = self.embed_tokens(input_ids)
          if position_ids is None:

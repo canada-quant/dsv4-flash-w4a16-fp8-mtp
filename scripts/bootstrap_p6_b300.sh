@@ -26,7 +26,10 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLMC_SHA="f2aa32e2bde1941182d8f8a348837574969335e6"
 VLLM_SHA="3424fba51301504262c3d8355e2560469f18c9c4"
 TRANSFORMERS_VER="5.8.1"
-CT_VER="0.15.0.1"
+# 0.15.1a20260515 is the alpha that ships compressed_tensors.distributed, which
+# llm-compressor f2aa32e2 imports unconditionally. Predecessor's 0.15.0.1 pin
+# predates this alpha (no .distributed submodule -> ModuleNotFoundError on import).
+CT_VER="0.15.1a20260515"
 
 # ---------- CUDA toolchain ----------
 CU_HOME=/opt/pytorch/cuda

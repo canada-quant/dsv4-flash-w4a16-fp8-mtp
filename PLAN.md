@@ -35,7 +35,8 @@ Thirteen days of upstream churn. Three things reshape the scope:
 
 2. **PR #43004–#43077 (2026-05-19) refactored DSv4 paths.** `vllm/model_executor/models/deepseek_v4.py` → `vllm/models/deepseek_v4/nvidia/model.py`. Old patches against the legacy path will not apply.
 
-3. **transformers v5.8.1 has DSv4 but no MTP class.** `from_pretrained` still silently drops `mtp.*` keys. The `modeling_deepseek_v4.py.diff` patch is still load-bearing.
+3. **transformers v5.8.1 has DSv4 but no MTP class.** `from_pretrained` still silently drops `mtp.*` keys via an explicit
+   `_keys_to_ignore_on_load_unexpected = [r"(^|\.)mtp\..*"]` regex on `DeepseekV4PreTrainedModel` (~line 1196). This is the smoking-gun root cause for the predecessor quant shipping without MTP — confirmed by direct inspection on 2026-05-19. The `modeling_deepseek_v4.py.diff` patch now carries two hunks: hunk 1 sets that list to `[]` (new this repo), hunk 2 is the ported calibration cache fix.
 
 ## Software stack pins
 
@@ -46,8 +47,11 @@ transformers==5.8.1
 # llm-compressor — kylesayrs branch, pin SHA from 2026-05-18
 git+https://github.com/vllm-project/llm-compressor.git@f2aa32e2bde1941182d8f8a348837574969335e6
 
-# compressed-tensors — `>=0.15.1a2` was a phantom alpha; use actual release
-compressed-tensors==0.15.0.1
+# compressed-tensors — the predecessor's "phantom alpha" 0.15.1a2 actually
+# shipped on 2026-05-15 as 0.15.1a20260515. llm-compressor f2aa32e2
+# unconditionally imports compressed_tensors.distributed (added in the 0.15.1
+# alpha line), so 0.15.0.1 fails with ModuleNotFoundError at import time.
+compressed-tensors==0.15.1a20260515
 
 # vLLM — pin to PR #41834 head (jasl/vllm codex/ds4-sm120-min-enable)
 # Includes upstream main through 2026-05-17 rebase + #42930 CUDA MTP fix + workspace prereserve

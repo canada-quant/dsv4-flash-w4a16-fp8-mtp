@@ -22,9 +22,14 @@ Generated 2026-05-19.
   placeholder), so the predecessor's literal diff hunks no longer apply.
 
 ### compressed-tensors (vllm-project)
-- pinned: `compressed-tensors==0.15.0.1`
-- the predecessor used `>=0.15.1a2` which was a phantom alpha pin; 0.15.0.1
-  is the actual released version with the needed APIs.
+- pinned: `compressed-tensors==0.15.1a20260515`
+- llm-compressor f2aa32e2 unconditionally imports `compressed_tensors.distributed`,
+  which was added in the 0.15.1 alpha line. The stable `0.15.0.1` releases the
+  predecessor used do not ship `.distributed` -> `ModuleNotFoundError` at
+  import time. The predecessor's `>=0.15.1a2` pin looked like a phantom at the
+  time but the alpha `0.15.1a20260515` (released 2026-05-15) actually fulfills
+  it. Pin to this exact alpha for reproducibility; remove the pin once a
+  stable 0.15.1 lands.
 
 ### vLLM (jasl/codex/ds4-sm120-min-enable)
 - repo: https://github.com/jasl/vllm.git
@@ -46,16 +51,30 @@ Generated 2026-05-19.
 ## Patches in this directory
 
 ### `modeling_deepseek_v4.py.diff`
-Skips `DynamicCache` auto-construction when `past_key_values is None`. With
-the V4-Flash config (`layer_types=None`), `DynamicCache(config=...)` falls
-back to generic `DynamicLayer` which lacks `store_compression_weights`; the
-V4 compressor then crashes calling that method during calibration. Leaving
-`past_key_values=None` takes the cache_layer-is-None branch of
-`compressor.forward`, which is the right path for GPTQ (no decode-style
-accumulation needed).
+Two hunks against `transformers/models/deepseek_v4/modeling_deepseek_v4.py`.
 
-Same content as the predecessor's patch; the touched lines (~1177 in
-modeling_deepseek_v4.py) are stable across the 5.8.x line.
+**Hunk 1 (mtp retention, new this repo):** removes the line
+```python
+_keys_to_ignore_on_load_unexpected = [r"(^|\.)mtp\..*"]
+```
+on `DeepseekV4PreTrainedModel`. That regex tells `from_pretrained` to
+silently drop every `mtp.*` key on load — the exact mechanism by which the
+predecessor's quant lost the MTP layer. Setting the list to `[]` keeps the
+mtp tensors in memory so the GPTQ pass in Phase 2 can calibrate them.
+Predecessor did not need this hunk because they were not retaining MTP.
+
+**Hunk 2 (calibration, ported from predecessor):** skips `DynamicCache`
+auto-construction when `past_key_values is None`. With the V4-Flash config
+(`layer_types=None`), `DynamicCache(config=...)` falls back to generic
+`DynamicLayer` which lacks `store_compression_weights`; the V4 compressor
+then crashes calling that method during calibration. Leaving
+`past_key_values=None` takes the cache_layer-is-None branch of
+`compressor.forward`, which is the right path for GPTQ.
+
+The diff is git-style (`a/`, `b/` prefixes), apply with
+`patch -p1 -d $TR_SITE_PACKAGES`. The predecessor's diff used absolute
+`/workspace/...` paths and required a fragile `-p5` strip; this regenerated
+diff is portable.
 
 ### `helpers.py.diff`
 Adds Cache-class handling to `SequentialTracer.create_arg`. Without it, fx
