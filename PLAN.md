@@ -129,6 +129,26 @@ python scripts/dequant_mtp.py \
 
 **Verification gate:** `scripts/verify_mtp_keys.py ./weights/bf16-mtp` must report ≥1 MTP tensor. Abort if zero.
 
+### Calibration corpus (pinned 2026-05-19 — bit-for-bit matches predecessor)
+
+| Field | Value |
+|---|---|
+| Dataset | `HuggingFaceH4/ultrachat_200k` |
+| Split | `train_sft` |
+| Samples | **768** (rank-partitioned via `compressed_tensors.datasets.get_rank_partition`) |
+| Seed | 42 |
+| Max seq length | **512** tokens |
+| Batch size | **4** per rank |
+| Chat encoding | DSv4 manual (no Jinja template). `BOS` prefix, then `<｜User｜>...` / `<｜Assistant｜></think>...{EOS}` per message |
+| Source | predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` calibration script verbatim — `/tmp/dsv4-sources/dsv4-flash-w4a16-fp8/scripts/quantize_v4_w4a16.py` lines 67-135 |
+| HF dataset revision | record the commit hash returned by `load_dataset(..., revision=None)` at calibration kickoff into `findings/calibration-dataset-commit.txt` for reproducibility |
+
+The point of pinning is so this run is comparable to the predecessor's quality bar; deviating on calibration corpus means evals diverge for non-recipe reasons.
+
+### Launch convention (pinned)
+
+`torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py ...` — the calibration script calls `compressed_tensors.distributed.init_dist()` which reads `RANK`/`LOCAL_RANK`/`WORLD_SIZE` from torchrun's env, sets `cuda:LOCAL_RANK` as the default device, and calls `dist.init_process_group(backend="nccl", ...)`. The vendored `Transformer`'s MoE then shards `n_routed_experts=256` across `world_size=8` ranks = 32 experts per rank.
+
 ### Phase 2 — GPTQ calibration W4A16-FP8 + MTP layer 43 (8–12 h on 8× B300)
 
 > **2026-05-19 update — architecture blocker:** transformers 5.8.1's

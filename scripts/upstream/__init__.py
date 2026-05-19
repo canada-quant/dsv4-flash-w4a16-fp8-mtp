@@ -104,9 +104,33 @@ _module.ColumnParallelLinear = GPTQLinear
 _module.RowParallelLinear = GPTQLinear
 
 
-# ---- 5) ensure world_size / rank globals do not require torch.distributed ----
+# ---- 5) world_size / rank — dist-aware, defaults to single-process ----
+# Default to (1, 0); the calibration script (or smoke harness) must call
+# ``apply_dist_state()`` AFTER calling ``compressed_tensors.distributed.init_dist()``
+# but BEFORE instantiating ``Transformer(args)``, so the upstream MoE's
+# expert-sharding reads the right values at construction time.
 _module.world_size = 1
 _module.rank = 0
+
+
+def apply_dist_state() -> tuple[int, int]:
+    """Mirror torch.distributed state into the vendored module's globals.
+
+    The upstream ``Transformer.__init__`` reads module-level ``world_size`` /
+    ``rank`` once. Calibration on 8x B300 via
+    ``torchrun --nproc-per-node 8 ... && compressed_tensors.distributed.init_dist()``
+    sets dist, but our shim was imported BEFORE that. Call this after
+    init_dist() and before instantiating Transformer.
+
+    Returns the (world_size, rank) tuple actually set.
+    """
+    if dist.is_available() and dist.is_initialized():
+        _module.world_size = dist.get_world_size()
+        _module.rank = dist.get_rank()
+    else:
+        _module.world_size = 1
+        _module.rank = 0
+    return _module.world_size, _module.rank
 
 
 # ---- 6) re-export the public API --------------------------------------------
@@ -177,4 +201,5 @@ __all__ = [
     "ParallelHead",
     "GPTQLinear",
     "build_model_args",
+    "apply_dist_state",
 ]

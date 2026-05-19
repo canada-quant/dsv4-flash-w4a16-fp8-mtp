@@ -409,3 +409,74 @@ the model is importable, the MTP block is reachable, real weights map
 **Awaiting confirmation before writing code in Missing 1, 2, 6, 7.** Missing 3-5
 do not write new code, so they're safe to do in parallel — happy to wait if
 you'd rather they be on the same approval cycle.
+
+---
+
+## User approval (2026-05-19, post-redirect)
+
+The user reviewed the above and approved as follows. Recorded here so the
+next session doesn't re-litigate the architectural decisions:
+
+- **Q1 — Option A' (vendored upstream + adapter) approved.** Not patching
+  transformers in place. The vendored Transformer is the source of truth for
+  MTP wiring, uses the same naming as the BF16 safetensors, and is what
+  unblocks shipping this quant. Patching transformers to grow an MTPBlock +
+  WeightRenaming rules would be the cleaner ecosystem answer but is 400-500
+  LOC of pip-installed-library patching that has to be re-applied on every
+  transformers bump, and is not what unblocks shipping. We are quantizing,
+  not upstreaming a model class.
+
+- **Q2 — Single-GPU 4-sample smoke is MANDATORY.** Real BF16 weights,
+  cuda:0, full wrapped forward (main → MTP), 1-layer GPTQ recipe on one
+  expert group. Smoke must prove: (a) load works with no OOM and no naming
+  mismatch, (b) the forward wrapper drives MTP Linears and GPTQ collects
+  non-zero Hessian data — Hessian trace printed as proof, (c) save_pretrained
+  (or GPTQModifier.apply equivalent) writes a config.json with the expected
+  compressed-tensors structure. 20 min budget. Skipping is not an option.
+
+- **Q3 — Calibration corpus locked.** HuggingFaceH4/ultrachat_200k train_sft,
+  768 samples, seed=42, seq=512, batch=4, V4 manual chat encoding — exactly
+  what the predecessor used. Documented in PLAN.md "Calibration corpus
+  (pinned)" section. The HF dataset commit hash for whatever revision is
+  pulled at calibration kickoff is to be written to
+  `findings/calibration-dataset-commit.txt`.
+
+- **Q4 — GPTQ-vs-RTN signature check, tightened acceptance:**
+  1. `quantization_config.config_groups[0].quantization_args.actorder` is
+     present and non-null (RTN does not set this).
+  2. On a sampled W4A16 expert layer, per-expert scale **coefficient of
+     variation** (std/mean across the 256 experts, computed per-group then
+     averaged) is > 0.05.
+  3. Sample 3 main-model layers at different depths (suggested: 4, 22, 41)
+     plus mtp.0 — RTN's clustering signature is depth-uniform, GPTQ spreads
+     by layer.
+  4. **Differential proof:** `verify_gptq_signature.py` is run against BOTH
+     the new GPTQ artifact AND `/scratch/weights/w4a16-fp8-mtp-rtn-fallback`.
+     RTN must FAIL the check; GPTQ must PASS. Without that differential the
+     script is rubber-stamping.
+
+- **`oneshot(model=...)` bridge — option A with 2h timeout.** Try option A
+  (thin PreTrainedModel wrapper). If we hit more than one llm-compressor
+  internal demanding real HF config attributes within 2 hours, bail to option
+  B (call `GPTQModifier.apply(...)` directly). Document the path taken in
+  the commit message.
+
+- **Forward wrapper — explicit `CalibrationModel(nn.Module)`** (option b in
+  the user's note). Explicit is better than monkey-patched. `~30 LOC`.
+
+- **BF16 load behaviour — no rename hacks.** If load hits a naming mismatch,
+  STOP and report. A' is committed precisely because the names already match.
+
+- **Order of operations (approved through step 4; step 5 GATED on smoke
+  output review):**
+  1. Pin calibration corpus + dataset commit hash in PLAN.md ✓
+  2. Write the CalibrationModel wrapper + dist-aware world_size fix
+  3. Write the real-weights smoke harness — 4 samples, 1 layer, 1 expert
+     group, print Hessian trace
+  4. Run smoke on cuda:0
+  5. **GATE — must show smoke output (Hessian trace) before kicking off**:
+     full quantize_v4_w4a16_mtp.py + oneshot bridge
+  6. Full 8-GPU GPTQ calibration (8-12 h)
+  7. verify_mtp_quantized.py + verify_gptq_signature.py (both artifacts —
+     new GPTQ must pass, RTN fallback must fail)
+  8. Resume Phase 4-onward serving and benching.
