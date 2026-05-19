@@ -129,6 +129,22 @@ python scripts/dequant_mtp.py \
 
 ### Phase 2 — GPTQ calibration W4A16-FP8 + MTP layer 43 (8–12 h on 8× B300)
 
+> **2026-05-19 update — architecture blocker:** transformers 5.8.1's
+> `deepseek_v4/` package has **no MTP module class**, only
+> `num_nextn_predict_layers: int = 1` in the config. With the load-time regex
+> patched, `from_pretrained` will deserialize the 1,575 mtp.* tensors but
+> they have no `nn.Module` to attach to → `model.parameters()` will not
+> include them, and GPTQ won't see them. Three resolutions tracked in
+> `scripts/quantize_v4_w4a16_mtp.py` docstring; the chosen approach is to
+> define a `DeepSeekV4MTPLayer` shim *inside* the calibration script
+> (driven by upstream `inference/model.py` as the source of truth on the
+> e_proj / h_proj / hc_* / shared_head wiring) and attach it as
+> `model.mtp = shim` before oneshot. **The names in the recipe regexes
+> below must also be updated from the predecessor's HF-style
+> (`self_attn.q_a_proj`) to DeepSeek's internal naming
+> (`attn.wq_a`) — the upstream checkpoint uses internal names directly
+> and `scripts/dequant_mtp.py` preserves them.
+
 ```bash
 # Patch llm-compressor for MTP retention (rebase first if SHA shifted)
 LLMC_DIR=$(python -c 'import llmcompressor; print(llmcompressor.__path__[0])')
