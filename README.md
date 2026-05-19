@@ -14,7 +14,7 @@ Sibling, non-overlapping scope to [`dsv4-flash-reasoning-agent`](https://github.
 | 1 | Dequant FP4/FP8 → BF16 preserving MTP | ✓ **543 GB BF16, 797 MTP tensors** | 8m 33s |
 | 2 | W4A16-FP8 + MTP quantization via `model_free_ptq` (RTN) | ✓ **146 GB, 102,826 tensors, MTP gate passes** | 7 min |
 | 3 | Clean `quantization_config.ignore` of pass-1↔pass-2 overlap | ✓ 2 duplicates removed | <1 s |
-| 4 | Install CUDA toolkit, build vLLM, apply 2 patches | ⏳ in progress | — |
+| 4 | Install CUDA toolkit, build vLLM, apply 2 patches | ⚠️ CUDA installed; vLLM build chained through 4 ABI/setuptools/setsid retries (see memory bank); rebuild ~20m running async on box | ~1.5 h so far |
 | 5 | Smoke serve TP=2 with `--speculative-config method=mtp num_speculative_tokens=2` | ⏳ next | — |
 | 6 | Benchmarks (chat-smoke, toolcall15, GSM8K, HumanEval, NIAH, MTP-acceptance) | ⏳ next | ~4 h |
 | 7 | 4× TP=2 instances pinned to GPU pairs | ⏳ next | ~2 h |
