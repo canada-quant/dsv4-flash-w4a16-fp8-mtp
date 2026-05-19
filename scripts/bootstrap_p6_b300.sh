@@ -32,17 +32,22 @@ TRANSFORMERS_VER="5.8.1"
 CT_VER="0.15.1a20260515"
 
 # ---------- CUDA toolchain ----------
-CU_HOME=/opt/pytorch/cuda
-if [[ ! -d "$CU_HOME/bin" ]]; then
-    CU_HOME=/opt/pytorch/lib/python3.13/site-packages/nvidia/cu13
+# /opt/pytorch/cuda is runtime-only on the DLAMI (no lib64, no unversioned .so);
+# install the full apt-packaged toolkit at /usr/local/cuda for source builds.
+# Memory note: dlami_cuda_toolkit_incomplete.md
+if [[ ! -d /usr/local/cuda/lib64 ]]; then
+    echo "[cuda] installing cuda-toolkit-13-0 (one-time, ~3 GB download)"
+    if [[ ! -f /etc/apt/sources.list.d/cuda-ubuntu2404-x86_64.list ]]; then
+        wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb -O /tmp/cuda-keyring.deb
+        sudo dpkg -i /tmp/cuda-keyring.deb
+    fi
+    sudo apt-get -qq update
+    sudo apt-get install -y cuda-toolkit-13-0
 fi
-if [[ ! -d "$CU_HOME/bin" ]]; then
-    echo "FATAL: no CUDA toolkit found under /opt/pytorch" >&2
-    exit 1
-fi
-export CUDA_HOME="$CU_HOME"
+export CUDA_HOME=/usr/local/cuda
 export PATH="$CUDA_HOME/bin:$PATH"
-export LD_LIBRARY_PATH="$CUDA_HOME/lib:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+echo "[cuda] $($CUDA_HOME/bin/nvcc --version | grep 'release' | head -1)"
 
 # Idempotent bashrc additions
 add_to_bashrc() {
@@ -51,7 +56,7 @@ add_to_bashrc() {
 }
 add_to_bashrc "export CUDA_HOME=$CUDA_HOME"
 add_to_bashrc "export PATH=\$CUDA_HOME/bin:\$PATH"
-add_to_bashrc "export LD_LIBRARY_PATH=\$CUDA_HOME/lib:\${LD_LIBRARY_PATH:-}"
+add_to_bashrc "export LD_LIBRARY_PATH=\$CUDA_HOME/lib64:\${LD_LIBRARY_PATH:-}"
 
 # ---------- /data (300 GB EBS) ----------
 if ! mountpoint -q /data; then
