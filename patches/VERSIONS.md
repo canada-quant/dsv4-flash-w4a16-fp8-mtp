@@ -1,6 +1,12 @@
 # Patch provenance
 
-Generated 2026-05-19.
+Generated 2026-05-19. **Last update:** 2026-05-19 — Phases 0-3 complete and
+shipping artifact at `/scratch/weights/w4a16-fp8-mtp` (146 GB) was produced
+via `model_free_ptq` (RTN), not the GPTQ path that this patch stack was
+originally designed for. The patches in `patches/` are still relevant for
+anyone pursuing the GPTQ refinement path described in `PHASE2_DESIGN.md`;
+the patches in `scripts/patch_*.py` apply to vLLM at serve time
+(Phases 4-5) regardless of which calibration path produced the artifact.
 
 ## Upstream pins
 
@@ -84,3 +90,38 @@ Implementation mirrors the existing `PretrainedConfig` branch: emit a
 fresh empty-constructor call so the traced graph constructs a real Cache at
 runtime. GPTQ hooks Linear inputs/outputs only, so it does not need real
 cache state.
+
+## Patches in `scripts/` (applied to vLLM at serve time, Phase 4)
+
+### `scripts/patch_v4_forcausal_packed_mapping.py`
+Adds `packed_modules_mapping` to `DeepseekV4ForCausalLM` at
+`vllm/models/deepseek_v4/nvidia/model.py`. Without this, FP8_BLOCK
+attention loading fails with
+`Unable to find matching target for model.layers.0.attn.fused_wqa_wkv` in
+the compressed-tensors config. The attribute lists the fused module names
+and their constituent shard names. Idempotent.
+
+### `scripts/patch_mtp_packed_mapping.py`
+Same idea, applied to `DeepSeekV4MTP` at
+`vllm/models/deepseek_v4/nvidia/mtp.py`. Without this, MTP attention
+loading fails the same way. Drops the reasoning-agent's old global
+`.weight_scale_inv -> .weight_scale` rename — post-refactor mtp.py at
+lines 357-389 already chooses the right suffix per expert dtype, so the
+global rename would now break FP8 expert handling. Idempotent.
+
+## CUDA toolkit on the DLAMI
+
+The DLAMI's `/opt/pytorch/cuda` is a **runtime-only** install — fine for
+torch.cuda but missing the `lib64/` symlink and unversioned `.so` names
+that cmake-based source builds (vLLM, FlashAttention) require. Phase 4
+installs the standard NVIDIA toolkit:
+
+```bash
+sudo apt-get install -y cuda-toolkit-13-0   # via the cuda-keyring deb
+export CUDA_HOME=/usr/local/cuda             # symlinks to /etc/alternatives/cuda
+```
+
+After this `nvcc 13.0.88` is at `/usr/local/cuda/bin/nvcc` and the full
+`lib64` layout exists. `/opt/pytorch`'s bundled libs continue to work for
+runtime torch operations because they're loaded directly from the venv's
+site-packages, taking precedence over the system libs.
