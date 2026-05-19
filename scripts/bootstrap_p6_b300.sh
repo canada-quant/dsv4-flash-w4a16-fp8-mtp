@@ -102,10 +102,16 @@ fi
 source /data/venv-serve/bin/activate
 pip install --quiet --upgrade pip wheel setuptools
 pip install --quiet --index-url https://download.pytorch.org/whl/cu130 torch
-# vLLM source build — uses CUDA_HOME / nvcc set above
+# vLLM build prerequisites (must be in the venv pre-build for --no-build-isolation)
+pip install --quiet ninja cmake "numpy<3" pybind11 packaging setuptools-scm
+# vLLM source build — --no-build-isolation so cmake can find the venv's torch
+# (default isolated build pulls a pip-side torch which mismatches CUDA arch).
+# CUDA_HOME / nvcc / TORCH_CUDA_ARCH_LIST set above.
 export TORCH_CUDA_ARCH_LIST="10.0a"
 export MAX_JOBS=${MAX_JOBS:-32}
-pip install --quiet "git+https://github.com/jasl/vllm.git@$VLLM_SHA"
+pip install --no-build-isolation -v \
+    "git+https://github.com/jasl/vllm.git@$VLLM_SHA" 2>&1 | \
+    tee /tmp/vllm_build.log
 deactivate
 echo "[ok] venv-serve ready"
 
