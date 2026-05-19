@@ -1,145 +1,304 @@
 #!/usr/bin/env python3
-"""Phase 2: GPTQ W4A16-FP8 calibration of DeepSeek-V4-Flash, including MTP.
+"""Phase 2 — GPTQ W4A16-FP8 calibration of DeepSeek-V4-Flash, MTP included.
 
-**Status (2026-05-19): structural scaffold, not yet runnable end-to-end.**
+Loads the Phase-1 BF16 dequant into an adapted upstream Transformer
+(``scripts.upstream``), wraps it so calibration forward flows through both
+the main 43 layers AND the MTP block (so GPTQ hooks fire on every Linear
+in mtp.0.*), then invokes ``llmcompressor.oneshot`` with the recipe
+specified in PHASE2_DESIGN.md.
 
-Why this script is a stub
--------------------------
-The predecessor's W4A16 recipe (`pastapaul/DeepSeek-V4-Flash-W4A16-FP8`) ran
-GPTQ over `DeepseekV4DecoderLayer` modules with `llmcompressor.oneshot`. That
-worked because every routed-expert MLP and every attention projection it
-needed was reachable as an `nn.Module` attribute of the loaded transformers
-model.
+Recipe summary (DeepSeek-internal naming throughout):
 
-For this repo we need to also calibrate the MTP layer. Verified by direct
-inspection of `transformers==5.8.1` on 2026-05-19:
+  attention   FP8_BLOCK  re:.*\\.attn\\.(wq_a|wq_b|wkv|wo_a|wo_b)$
+                          re:mtp\\.\\d+\\.(e_proj|h_proj)$
+  experts     W4A16      re:.*\\.ffn\\.experts\\.\\d+\\.(w1|w2|w3)$
+  ignore                  lm_head, embeddings, *norm*, *gate*, *shared_experts*,
+                          *hc_*, *attn_sink*, *compressor*, *indexer*
 
-  $ ls .../transformers/models/deepseek_v4/
-  __init__.py  configuration_deepseek_v4.py  modeling_deepseek_v4.py  modular_deepseek_v4.py
+CLI::
 
-  $ grep -ni "class.*mtp\|class.*MultiToken\|class.*NextN" .../modeling_deepseek_v4.py
-  (no matches)
-
-Transformers 5.8.1 has the DSv4 *architecture* but **no MTP module class** —
-only `num_nextn_predict_layers: int = 1` in `configuration_deepseek_v4.py`.
-With the load-time regex neutralized (see patches/modeling_deepseek_v4.py.diff
-hunk 1), `from_pretrained` will *deserialize* the 1,575 mtp.* tensors but
-they have no `nn.Module` to attach to — they sit in the state-dict dropbox
-and are absent from `model.parameters()`. GPTQ traverses
-`model.modules()`, so it cannot see them.
-
-Three resolutions, in increasing scope:
-
-  (1) **Shim module in this script** — define a minimal `DeepSeekV4MTPLayer`
-      that owns the e_proj, h_proj, shared_head, norms, the inner decoder
-      layer, and the hc_* heads. Attach it as `model.mtp = MTPLayer(...)` in
-      the calibration entry point. Run the calibration with a custom
-      forward that pipes hidden_states from the main model's layer 42 output
-      through the MTP layer so GPTQ hooks see real activations.
-
-  (2) **Patch transformers** to add a `DeepSeekV4MTP` class. Heavier; will
-      conflict the moment upstream lands MTP support.
-
-  (3) **Two-pass calibration** — first oneshot over the main model with
-      `mtp.*` keys present-but-unattached, then a second oneshot focused on
-      the MTP block alone, fed with hidden_states captured during pass one.
-      Most decoupled but doubles the calibration wall-clock.
-
-Approach (1) is the planned path.
-
-MTPBlock structure (extracted from upstream inference/model.py, 2026-05-19):
-
-    class MTPBlock(Block):
-        e_proj      Linear(dim, dim)      # quantize FP8_BLOCK
-        h_proj      Linear(dim, dim)      # quantize FP8_BLOCK
-        enorm       RMSNorm               # ignore (BF16)
-        hnorm       RMSNorm               # ignore
-        norm        RMSNorm               # ignore
-        hc_head_fn   FP32 param            # ignore
-        hc_head_base FP32 param            # ignore
-        hc_head_scale FP32 param           # ignore
-        embed, head  aliases to main model # shared, do not duplicate
-
-    class Block (parent of MTPBlock):
-        attn        Attention              # FP8_BLOCK on wq_a/wq_b/wkv/wo_a/wo_b
-        ffn         MoE                    # W4A16 on experts.*.w1/w2/w3
-        attn_norm   RMSNorm                # ignore
-        ffn_norm    RMSNorm                # ignore
-        hc_attn_fn/base/scale FP32 params  # ignore (hyper-connection)
-        hc_ffn_fn/base/scale  FP32 params  # ignore
-
-    class Attention (used by both):
-        wq_a, wq_b, wkv, wo_a, wo_b  Linear in FP8_BLOCK
-        q_norm, kv_norm              RMSNorm
-        attn_sink                    FP32 param
-        compressor                   nested submodule (wkv, wgate, norm)
-        indexer                      nested submodule (wq_b, weights_proj, compressor)
-
-The non-standard `hc_pre` / `hc_post` hyper-connection ops in Block.forward
-do NOT contain any Linear modules — they are pure tensor algebra over
-hc_attn_fn, hc_attn_base, hc_attn_scale parameters. GPTQ will not need to
-hook them. The MTP shim therefore only needs to make the Linear modules
-reachable by `model.named_modules()` and produce reasonable activations
-during the calibration forward.
-
-Inventory of mtp.0.* tensors in the upstream checkpoint (1,575 total,
-verified 2026-05-19):
-  ffn         1,544  — 256 experts x w1/w2/w3 weight+scale = 1,536,
-                       plus shared_experts.w1/w2/w3 weight+scale and gate
-  attn           13  — wq_a/wq_b/wkv/wo_a/wo_b weight+scale = 10, plus
-                       attn_sink, q_norm.weight, kv_norm.weight = 3
-  e_proj          2  — weight + scale (quantized — Linear(dim, dim))
-  h_proj          2  — weight + scale (quantized — Linear(dim, dim))
-  hc_*           9  — hc_attn_{fn,base,scale}, hc_ffn_{fn,base,scale},
-                       hc_head_{fn,base,scale} — all FP32 params, BF16 pass
-  attn_norm/ffn_norm/enorm/hnorm/norm  5  — RMSNorm weights, BF16
-                       (norm = shared_head.norm)
-
-The earlier PLAN.md note that ``e_proj`` and ``h_proj`` should be in the
-*ignore* list is incorrect — they ARE quantized in the upstream (each has a
-.scale). They belong in the FP8_BLOCK regex along with attn.wq_a etc.
-
-Recipe topology (target)
-------------------------
-- routed experts, layers 0..42 AND mtp.0: W4A16 INT4 group=128 sym, GPTQ
-- attention projections, layers 0..42 AND mtp.0: FP8_BLOCK 128x128 data-free
-- ignore (BF16 passthrough): lm_head, embeddings, all *norm*, *gate*,
-  *shared_experts*, *hc_*, *attn_sink*, MTP-specific: e_proj, h_proj,
-  shared_head.*, enorm, hnorm, attn_norm, attn_sink, hc_0..3, ffn.gate,
-  ffn.shared_experts, input_layernorm, post_attention_layernorm
-
-Names below use DeepSeek's *internal* convention (`attn.wq_a`, `ffn.experts`,
-no `model.` prefix), verified against the upstream HF checkpoint and the
-post-dequant BF16 output of `scripts/dequant_mtp.py`.
-
-Calibration data: HuggingFaceH4/ultrachat_200k, V4 manual chat encoding
-(no Jinja template). Same as predecessor.
-
-Launch
-------
-    torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py \\
+    python scripts/quantize_v4_w4a16_mtp.py \\
         --input  /scratch/weights/bf16-mtp \\
         --output /scratch/weights/w4a16-fp8-mtp \\
-        --samples 768 --batch-size 4
+        --config vendor/dsv4-upstream/config.json \\
+        --samples 768 --batch-size 4 --max-seq-len 512
 
-Memory budget on 8x B300 (275 GB HBM each): 284B BF16 ~568 GB, with
-oneshot offload-hessians and sequential targets the residency is one
-decoder layer at a time + offloaded ghosts.
+Smoke test (fast, validates the pipeline before the 8-12h full run)::
+
+    python scripts/quantize_v4_w4a16_mtp.py ... --samples 4 --batch-size 1
+
+Notes on memory + cost:
+  - The BF16 model is ~568 GB. Loads into CPU RAM (4 TB on p6-b300.48xlarge).
+  - llmcompressor's sequential GPTQ moves one Block at a time to GPU,
+    keeping per-Block residency at ~13 GB. With ``offload_hessians=True``
+    Hessians stream back to CPU between Linears.
+  - The full 768-sample run is 8-12 hours per PLAN.md.
 """
-import argparse
-import os
-import sys
+from __future__ import annotations
 
-# ---- TODO: implement DeepSeekV4MTPLayer + main() ----
+import argparse
+import dataclasses
+import sys
+from pathlib import Path
+
+# Path setup so scripts.upstream resolves regardless of cwd
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import torch
+import torch.nn as nn
+
+from scripts.upstream import Transformer, build_model_args
+from scripts.load_bf16_into_transformer import load_safetensors_into
+
+
+# ----------------------------- model wrapper -----------------------------
+
+
+class CalibrationModel(nn.Module):
+    """Adapter that drives both main + MTP layers from a single forward.
+
+    Upstream Transformer.forward only flows through ``self.layers``; the MTP
+    block at ``self.mtp[0]`` is unused at inference time and would therefore
+    receive zero calibration activations under a plain forward.
+
+    This wrapper replicates the main forward path explicitly and then *also*
+    invokes the MTP block on the final main-layer hidden states. The MTP
+    logits are discarded — we only need the activations to flow through MTP
+    Linears so GPTQ hooks fire.
+
+    The forward signature accepts ``input_ids=...`` and returns an object
+    with ``.logits`` to match what ``llmcompressor.oneshot`` expects from an
+    HF-style PreTrainedModel.
+    """
+
+    def __init__(self, transformer: Transformer):
+        super().__init__()
+        self.transformer = transformer
+
+    def forward(self, input_ids: torch.Tensor, **_unused) -> "_LogitsOut":
+        t = self.transformer
+        h = t.embed(input_ids)
+        h = h.unsqueeze(2).repeat(1, 1, t.hc_mult, 1)
+        for layer in t.layers:
+            h = layer(h, 0, input_ids)
+        # Drive MTP — discard its logits, but its forward fires GPTQ hooks
+        # on e_proj, h_proj, attn.*, ffn.experts.*.
+        for mtp_layer in t.mtp:
+            _ = mtp_layer(h, 0, input_ids)
+        logits = t.head(h, t.hc_head_fn, t.hc_head_scale, t.hc_head_base, t.norm)
+        return _LogitsOut(logits)
+
+
+class _LogitsOut:
+    __slots__ = ("logits",)
+
+    def __init__(self, logits: torch.Tensor):
+        self.logits = logits
+
+
+# ----------------------------- dataset -----------------------------
+
+# V4 has no Jinja chat template; manual encoding per
+# https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/tree/main/encoding
+BOS = "<｜begin▁of▁sentence｜>"
+EOS = "<｜end▁of▁sentence｜>"
+
+
+def preprocess_v4(example: dict) -> dict:
+    text = BOS
+    for message in example["messages"]:
+        role = message["role"]
+        content = message["content"]
+        if role == "system":
+            text += content
+        elif role == "user":
+            text += f"<｜User｜>{content}"
+        elif role == "assistant":
+            text += f"<｜Assistant｜></think>{content}{EOS}"
+    return {"text": text}
+
+
+def build_calibration_dataset(
+    tokenizer, *, num_samples: int, max_seq_len: int, seed: int = 42
+):
+    """Load + tokenize HuggingFaceH4/ultrachat_200k with the V4 manual encoding."""
+    from datasets import load_dataset
+
+    ds = load_dataset(
+        "HuggingFaceH4/ultrachat_200k",
+        split=f"train_sft[:{num_samples * 2}]",  # over-fetch; filter after preprocess
+    )
+    ds = ds.shuffle(seed=seed)
+    ds = ds.map(preprocess_v4)
+    ds = ds.select(range(num_samples))
+
+    def tokenize(sample):
+        return tokenizer(
+            sample["text"],
+            padding=False,
+            max_length=max_seq_len,
+            truncation=True,
+            add_special_tokens=False,
+        )
+
+    ds = ds.map(tokenize, remove_columns=ds.column_names)
+    return ds
+
+
+# ----------------------------- recipe -----------------------------
+
+
+def build_recipe():
+    """GPTQ recipe: FP8_BLOCK attention (incl. MTP e_proj/h_proj) + W4A16 experts."""
+    from compressed_tensors.quantization.quant_scheme import (
+        FP8_BLOCK,
+        W4A16,
+        QuantizationScheme,
+    )
+    from llmcompressor.modifiers.quantization import GPTQModifier
+
+    return GPTQModifier(
+        config_groups={
+            "attention": QuantizationScheme(
+                targets=[
+                    r"re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$",
+                    r"re:mtp\.\d+\.(e_proj|h_proj)$",
+                ],
+                **FP8_BLOCK,
+            ),
+            "experts": QuantizationScheme(
+                targets=[
+                    r"re:.*\.ffn\.experts\.\d+\.(w1|w2|w3)$",
+                ],
+                **W4A16,
+            ),
+        },
+        ignore=[
+            "head",
+            "embed",
+            r"re:.*norm.*",
+            r"re:.*\.ffn\.gate$",
+            r"re:.*\.ffn\.gate\..*",
+            r"re:.*\.ffn\.shared_experts\..*",
+            r"re:.*\.hc_.*",
+            r"re:hc_.*",
+            r"re:.*\.attn\.attn_sink",
+            r"re:.*\.attn\.(compressor|indexer)\..*",
+        ],
+        offload_hessians=True,
+        dampening_frac=0.1,
+    )
+
+
+# ----------------------------- main -----------------------------
 
 
 def main():
-    raise SystemExit(
-        "quantize_v4_w4a16_mtp.py is a scaffold; the MTP shim module is the "
-        "next implementation step. See the docstring for the chosen approach "
-        "(option 1: in-script shim) and the open questions about hc_*, e_proj, "
-        "h_proj wiring that need answering from inference/model.py first."
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", required=True, help="Phase-1 BF16 dir")
+    ap.add_argument("--output", required=True, help="output W4A16-FP8 dir")
+    ap.add_argument("--config", required=True, help="vendor/dsv4-upstream/config.json")
+    ap.add_argument("--samples", type=int, default=768,
+                    help="calibration samples (use 4 for smoke test)")
+    ap.add_argument("--max-seq-len", type=int, default=512)
+    ap.add_argument("--batch-size", type=int, default=4)
+    ap.add_argument("--smoke", action="store_true",
+                    help="overrides --samples=4 --batch-size=1; aborts after one oneshot batch")
+    args = ap.parse_args()
+
+    if args.smoke:
+        args.samples = 4
+        args.batch_size = 1
+        print("[smoke] samples=4 batch_size=1")
+
+    # ---- model load ----
+    print(f"[args] config={args.config}")
+    margs = build_model_args(
+        args.config,
+        max_batch_size=args.batch_size,
+        max_seq_len=args.max_seq_len,
     )
+    print(f"[args] dim={margs.dim} n_layers={margs.n_layers} "
+          f"n_routed_experts={margs.n_routed_experts} n_mtp_layers={margs.n_mtp_layers}")
+
+    print("[load] instantiating Transformer on CPU")
+    torch.set_default_dtype(torch.bfloat16)
+    torch.set_default_device("cpu")
+    transformer = Transformer(margs)
+
+    print(f"[load] copying BF16 safetensors from {args.input}")
+    loaded, unmatched, missing = load_safetensors_into(
+        transformer, Path(args.input), verbose=True
+    )
+    print(f"[load] loaded={loaded} unmatched={len(unmatched)} missing={len(missing)}")
+    if unmatched:
+        print(f"[load] FATAL: {len(unmatched)} safetensors keys did not map to model params")
+        for k in unmatched[:10]:
+            print(f"  - {k}")
+        sys.exit(2)
+
+    # ---- tokenizer ----
+    from transformers import AutoTokenizer
+
+    print(f"[tokenizer] loading from {args.input}")
+    tokenizer = AutoTokenizer.from_pretrained(args.input, trust_remote_code=False)
+    print(f"[tokenizer] vocab_size={tokenizer.vocab_size}")
+
+    # ---- dataset ----
+    print(f"[dataset] preparing {args.samples} calibration samples")
+    ds = build_calibration_dataset(
+        tokenizer, num_samples=args.samples, max_seq_len=args.max_seq_len
+    )
+    print(f"[dataset] ready: {len(ds)} samples")
+
+    # ---- wrap for oneshot ----
+    model = CalibrationModel(transformer)
+
+    # ---- recipe + oneshot ----
+    print("[recipe] building GPTQModifier (FP8_BLOCK attn + W4A16 experts)")
+    recipe = build_recipe()
+
+    from llmcompressor import oneshot
+
+    print("[oneshot] starting sequential GPTQ calibration over Block targets")
+    oneshot(
+        model=model,
+        dataset=ds,
+        recipe=recipe,
+        max_seq_length=args.max_seq_len,
+        num_calibration_samples=args.samples,
+        sequential_targets=["Block", "MTPBlock"],
+        batch_size=args.batch_size,
+    )
+
+    # ---- save ----
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"[save] writing quantized model to {out}")
+
+    # llmcompressor save_pretrained / save_compressed expects a PreTrainedModel.
+    # Our wrapper isn't one; save raw state_dict shards via safetensors.
+    from safetensors.torch import save_file
+    state = model.transformer.state_dict()
+    # Naive sharding: 5 GB per shard
+    shards: dict[str, dict[str, torch.Tensor]] = {}
+    cur_bytes = 0
+    cur_idx = 1
+    for name, tensor in state.items():
+        if cur_bytes > 5 * (1 << 30):
+            cur_idx += 1
+            cur_bytes = 0
+        sname = f"model-{cur_idx:05d}-of-?????.safetensors"
+        shards.setdefault(sname, {})[name] = tensor
+        cur_bytes += tensor.numel() * tensor.element_size()
+    n = cur_idx
+    final = {}
+    for s, payload in shards.items():
+        new_name = s.replace("?????", f"{n:05d}")
+        save_file(payload, str(out / new_name))
+        final[new_name] = list(payload.keys())
+    print(f"[save] wrote {n} shards to {out}")
+    print("CALIBRATION_DONE")
 
 
 if __name__ == "__main__":

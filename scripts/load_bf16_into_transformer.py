@@ -38,6 +38,10 @@ import json
 import sys
 from pathlib import Path
 
+# Make scripts.upstream importable regardless of cwd. Must run BEFORE the
+# scripts.upstream import below.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import torch
 from safetensors import safe_open
 
