@@ -1,6 +1,6 @@
 # PLAN — DeepSeek-V4-Flash W4A16-FP8 + MTP re-quant
 
-> **Status snapshot (2026-05-19):** Phases 0–3 ✓ done. Phase 4 in progress (cuda-toolkit-13-0 installing). The W4A16-FP8+MTP artifact exists at `/scratch/weights/w4a16-fp8-mtp` (146 GB, MTP gate passes), produced via `model_free_ptq` (RTN) rather than the GPTQ path the original plan called for. The GPTQ refinement is scaffolded in `scripts/upstream/` + `PHASE2_DESIGN.md` for a follow-up session.
+> **Status snapshot (2026-05-19, updated):** Phase 0 ✓ done. Phase 1 ✓ done (BF16 dequant at `/scratch/weights/bf16-mtp`). Phase 4 ✓ done (vLLM built + patched). **Phases 2 and 3 SUPERSEDED.** The previous session's `model_free_ptq` (RTN) pivot is reversed — the resulting artifact is moved to `/scratch/weights/w4a16-fp8-mtp-rtn-fallback` and is **not the deliverable** because it does not match the predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` (which is GPTQ-calibrated). Phase 2 will be re-done via GPTQ oneshot per the original plan, using the vendored upstream adapter at `scripts/upstream/`. The concrete delta — what's already scaffolded vs what still needs to be built — is in `PHASE2_GPTQ_DELTA.md`. Phase 2 will not run until the user approves that delta.
 
 **Goal:** Republish `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K on Blackwell DC.
 

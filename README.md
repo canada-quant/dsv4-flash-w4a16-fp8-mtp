@@ -11,11 +11,13 @@ Sibling, non-overlapping scope to [`dsv4-flash-reasoning-agent`](https://github.
 | Phase | What | Outcome | Wall clock |
 |---|---|---|---|
 | 0 | Instance bring-up, `/data` mount, `/scratch` symlink, `venv-calib` with patches | ✓ done | ~1 h |
-| 1 | Dequant FP4/FP8 → BF16 preserving MTP | ✓ **543 GB BF16, 797 MTP tensors** | 8m 33s |
-| 2 | W4A16-FP8 + MTP quantization via `model_free_ptq` (RTN) | ✓ **146 GB, 102,826 tensors, MTP gate passes** | 7 min |
-| 3 | Clean `quantization_config.ignore` of pass-1↔pass-2 overlap | ✓ 2 duplicates removed | <1 s |
-| 4 | Install CUDA toolkit, build vLLM, apply 2 patches | ⚠️ CUDA installed; vLLM build chained through 4 ABI/setuptools/setsid retries (see memory bank); rebuild ~20m running async on box | ~1.5 h so far |
-| 5 | Smoke serve TP=2 with `--speculative-config method=mtp num_speculative_tokens=2` | ⏳ next | — |
+| 1 | Dequant FP4/FP8 → BF16 preserving MTP | ✓ **543 GB BF16, 797 MTP tensors** at `/scratch/weights/bf16-mtp` | 8m 33s |
+| 2 (RTN fallback, **SUPERSEDED**) | model_free RTN W4A16-FP8 + MTP — kept as a fallback at `/scratch/weights/w4a16-fp8-mtp-rtn-fallback`, **not shipping** | ⚠ superseded — RTN does not match predecessor GPTQ quality | 7 min |
+| 3 (config cleanup for RTN, **SUPERSEDED**) | clean_ignore_list.py removed pass-1↔pass-2 overlap on the RTN config | ⚠ superseded with Phase 2 | <1 s |
+| **2 (real)** | **GPTQ calibration of layers 0-42 + mtp.0 in one oneshot pass** — vendored upstream `Transformer` patched per `PHASE2_DESIGN.md` option A', forward wrapped to flow through MTP, HuggingFaceH4/ultrachat_200k 768 samples (predecessor's corpus) | ⏳ scaffolded; delta in `PHASE2_GPTQ_DELTA.md` — **gated on user approval before code lands** | est 8-12 h calibration + 1 day adapter work |
+| **3 (real)** | post-calibration config + GPTQ-signature verification (per-expert scale spread, `actorder` present) | ⏳ waiting on Phase 2 | <5 min |
+| 4 | Install CUDA toolkit, build vLLM, apply 2 patches | ✓ done — vllm-0.1.dev1+g3424fba51 installed, both `packed_modules_mapping` attributes verified | ~1 h |
+| 5 | Smoke serve TP=2 with `--speculative-config method=mtp num_speculative_tokens=2` on the **GPTQ** artifact | ⏳ waiting on Phase 2/3 | — |
 | 6 | Benchmarks (chat-smoke, toolcall15, GSM8K, HumanEval, NIAH, MTP-acceptance) | ⏳ next | ~4 h |
 | 7 | 4× TP=2 instances pinned to GPU pairs | ⏳ next | ~2 h |
 | 8 | HF release as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` | ⏳ permission-gated | ~1 h |
