@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Dequantize DeepSeek-V4-Flash native checkpoint to BF16, preserving MTP.
 
-The upstream HF checkpoint at deepseek-ai/DeepSeek-V4-Flash uses:
+The upstream HF checkpoint at deepseek-ai/DeepSeek-V4-Flash uses DeepSeek's
+**internal naming convention** (verified against shard 10 on 2026-05-19), not
+the HF-style ``model.layers.X.self_attn.q_a_proj``:
+  * names like ``layers.8.ffn.experts.0.w1.weight`` (no ``model.`` prefix,
+    ``ffn`` not ``mlp``, ``attn`` not ``self_attn``, ``wq_a``/``wkv``/etc.
+    instead of ``q_a_proj``/``kv_proj``)
   * FP4 (e2m1, packed 2-per-int8) routed experts with a per-32-elem ue8m0 scale
   * FP8 (e4m3) attention/dense linear weights with a 128x128-block ue8m0 scale
-  * BF16/F32/I64 for everything else (norms, embeddings, gates, attn_sink, ...)
+  * BF16/F32 for everything else (norms, embeddings, gates, attn_sink, ...)
   * mtp.* keys for the 1 MTP layer (num_nextn_predict_layers=1)
+  * **all scales use a single ``.scale`` suffix** (NOT ``.weight_scale`` or
+    ``.weight_scale_inv`` — those are HF-convention names that do not appear).
 
 This script outputs an HF-format BF16 checkpoint:
   * unpacks FP4 (using the same FP4_TABLE as upstream inference/convert.py)
@@ -151,20 +158,20 @@ def dequant_shard(
         keys = list(f.keys())
 
     for name in keys:
-        if name.endswith(".weight_scale") or name.endswith(".weight_scale_inv"):
+        if name.endswith(".scale"):
             # Scales are consumed when we dequant their paired weight; skip here.
             continue
 
         with safe_open(shard_path, framework="pt", device="cpu") as f:
             tensor = f.get_tensor(name)
 
-        # FP4 (int8 packed) — paired with .weight_scale
-        if name.endswith(".weight") and tensor.dtype == torch.int8:
-            scale_name = name[: -len(".weight")] + ".weight_scale"
-            if scale_name not in name_to_shard:
-                # Some int8 tensors are genuine int8 (bookkeeping); pass through.
-                out[name] = tensor
-                continue
+        scale_name = (
+            name[: -len(".weight")] + ".scale" if name.endswith(".weight") else None
+        )
+        has_scale = scale_name is not None and scale_name in name_to_shard
+
+        # FP4 (int8 packed) — paired with .scale (F8_E8M0, per-32-elem block)
+        if tensor.dtype == torch.int8 and has_scale:
             scale = fetch_scale(scale_name)
             w = tensor.to(device, non_blocking=True)
             s = scale.to(device, non_blocking=True)
@@ -172,27 +179,25 @@ def dequant_shard(
             del w, s
             continue
 
-        # FP8 (e4m3) — paired with .weight_scale_inv (block) or .weight_scale (per-token)
-        if name.endswith(".weight") and tensor.dtype == torch.float8_e4m3fn:
-            inv_name = name[: -len(".weight")] + ".weight_scale_inv"
-            ts_name = name[: -len(".weight")] + ".weight_scale"
-            if inv_name in name_to_shard:
-                scale = fetch_scale(inv_name)
-                w = tensor.to(device, non_blocking=True)
-                s = scale.to(device, non_blocking=True)
+        # FP8 (e4m3) — paired with .scale (F8_E8M0, 128x128 block)
+        if tensor.dtype == torch.float8_e4m3fn:
+            if not has_scale:
+                raise RuntimeError(f"FP8 weight {name} has no .scale in checkpoint")
+            scale = fetch_scale(scale_name)
+            w = tensor.to(device, non_blocking=True)
+            s = scale.to(device, non_blocking=True)
+            # Choose layout by scale rank: 2D -> 128x128 block; 1D -> per-row
+            if scale.ndim == 2 and scale.shape == (
+                tensor.shape[0] // FP8_BLOCK,
+                tensor.shape[1] // FP8_BLOCK,
+            ):
                 out[name] = dequant_fp8_block_to_bf16(w, s).cpu()
-                del w, s
-            elif ts_name in name_to_shard:
-                scale = fetch_scale(ts_name)
-                w = tensor.to(device, non_blocking=True)
-                s = scale.to(device, non_blocking=True)
-                out[name] = dequant_fp8_per_token_to_bf16(w, s).cpu()
-                del w, s
             else:
-                raise RuntimeError(f"FP8 weight {name} has no scale in checkpoint")
+                out[name] = dequant_fp8_per_token_to_bf16(w, s).cpu()
+            del w, s
             continue
 
-        # Everything else (BF16, F32, I64) — pass through
+        # Everything else (BF16, F32, I64, bookkeeping int8 without scale) — pass through
         out[name] = tensor
 
     if device.startswith("cuda"):
