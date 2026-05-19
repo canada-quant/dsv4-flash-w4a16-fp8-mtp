@@ -28,10 +28,16 @@ import sys
 from pathlib import Path
 
 
-# Regex patterns over internal naming convention (verified against upstream
-# DeepSeek-V4-Flash safetensors on 2026-05-19).
-EXPERT_SCALE_RE = re.compile(r"^mtp\.\d+\.ffn\.experts\.\d+\.(w1|w2|w3)\.scale$")
-ATTN_SCALE_RE = re.compile(r"^mtp\.\d+\.attn\.(wq_a|wkv|wq_b|wo_a|wo_b)\.scale$")
+# Regex patterns over internal naming convention. compressed-tensors stores
+# the quantization scale alongside the quantized weight as `.weight_scale`
+# (W4A16) or `.weight_scale_inv` (FP8_BLOCK in some configurations); we
+# accept either.
+EXPERT_SCALE_RE = re.compile(
+    r"^mtp\.\d+\.ffn\.experts\.\d+\.(w1|w2|w3)\.(weight_scale|weight_scale_inv|scale)$"
+)
+ATTN_SCALE_RE = re.compile(
+    r"^mtp\.\d+\.attn\.(wq_a|wkv|wq_b|wo_a|wo_b)\.(weight_scale|weight_scale_inv|scale)$"
+)
 PASSTHROUGH_TAGS = (
     "e_proj",
     "h_proj",
