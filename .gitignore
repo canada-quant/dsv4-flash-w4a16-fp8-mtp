@@ -31,6 +31,9 @@ dist/
 .torch-cache/
 .pytest_cache/
 
+# Claude Code session state (not part of the project)
+.claude/
+
 # OS / editor
 .DS_Store
 *.swp
