@@ -90,6 +90,16 @@ class GPTQLinear(nn.Linear):
         self.weight.scale = None
         self.register_parameter("scale", None)
 
+    def reset_parameters(self) -> None:
+        """No-op. ``nn.Linear.__init__`` calls ``reset_parameters`` (kaiming
+        init) on every weight; for 568 GB of expert weights that's tens of
+        minutes of CPU random-number generation we throw away when we
+        immediately overwrite from safetensors. Skipping the init leaves the
+        weight as uninitialized memory, which is fine because ``copy_`` from
+        the safetensors fills every byte before any forward pass reads it.
+        """
+        pass
+
 
 # Swap upstream's Linear class in the vendored module's namespace.
 # Every Attention / MoE / Expert __init__ inside the vendored module

@@ -52,7 +52,23 @@ DEVICE = torch.device("cuda:0")
 
 N_SAMPLES = 4
 SEQ_LEN = 128
-TARGET_LINEAR = "mtp.0.ffn.experts.0.w1"
+# Hook multiple MTP Linears. Unconditional ones (attn.*, e_proj, h_proj,
+# ffn.shared_experts, ffn.gate) fire on every forward; expert Linears only
+# fire if the MoE Gate happens to route to them on the synthetic batch.
+# Reporting which fired is itself diagnostic.
+HOOK_TARGETS = [
+    "mtp.0.attn.wq_a",              # unconditional (every token through MLA)
+    "mtp.0.attn.wkv",               # unconditional
+    "mtp.0.attn.wo_b",              # unconditional
+    "mtp.0.e_proj",                 # unconditional (MTPBlock entry-embed proj)
+    "mtp.0.h_proj",                 # unconditional (MTPBlock entry-hidden proj)
+    "mtp.0.ffn.shared_experts.w1",  # unconditional (shared expert)
+    "mtp.0.ffn.experts.0.w1",       # conditional (only if Gate routes to expert 0)
+    "mtp.0.ffn.experts.0.w2",       # conditional
+    "mtp.0.ffn.experts.0.w3",       # conditional
+]
+# Primary target for the headline Hessian — must be unconditional
+TARGET_LINEAR = "mtp.0.attn.wq_a"
 
 
 def header(s: str) -> None:
@@ -141,67 +157,105 @@ print(f"OK (a) — load succeeded in {load_secs:.1f}s, zero unmatched, zero unex
 # ===========================================================================
 header("PHASE 2 SMOKE — step (b): real forward through MTP + Hessian trace")
 
+# Patch the lru_cache'd topk index functions to move results onto the device
+# the current forward is using. They allocate via torch.arange(...) with the
+# module-import default device (cpu), and the lru_cache memoizes that. When
+# the Attention layer (now on cuda:0) tries to use the cached CPU index
+# tensor, we get "Expected all tensors to be on the same device".
+import dsv4_upstream_model as _dsv4_mod_for_patch
+
+_orig_window_topk = _dsv4_mod_for_patch.get_window_topk_idxs
+_orig_compress_topk = _dsv4_mod_for_patch.get_compress_topk_idxs
+
+
+def _window_topk_to_dev(*a, **kw):
+    r = _orig_window_topk(*a, **kw)
+    return r.to(DEVICE) if r.device != DEVICE else r
+
+
+def _compress_topk_to_dev(*a, **kw):
+    r = _orig_compress_topk(*a, **kw)
+    return r.to(DEVICE) if r.device != DEVICE else r
+
+
+_dsv4_mod_for_patch.get_window_topk_idxs = _window_topk_to_dev
+_dsv4_mod_for_patch.get_compress_topk_idxs = _compress_topk_to_dev
+print("  patched get_*_topk_idxs to return device-matched indices", flush=True)
+
 cal_model = CalibrationModel(transformer)
-target_module = resolve_module(transformer, TARGET_LINEAR)
-print(f"  target Linear: {TARGET_LINEAR}", flush=True)
-print(f"    type={type(target_module).__name__}", flush=True)
-print(f"    weight.shape={list(target_module.weight.shape)}", flush=True)
-print(f"    in_features={target_module.in_features}", flush=True)
 
-# Hessian accumulator
-hess_state = {"H": None, "n_rows": 0}
+# Per-target Hessian accumulators
+hess_state: dict[str, dict] = {}
+handles = []
 
 
-def hessian_hook(_module, inputs, _output):
-    """Accumulate H += X.T @ X for the Linear's input X."""
-    x = inputs[0]
-    if x.ndim > 2:
-        x = x.reshape(-1, x.shape[-1])
-    x32 = x.detach().to(torch.float32)
-    H = x32.T @ x32
-    if hess_state["H"] is None:
-        hess_state["H"] = H
-    else:
-        hess_state["H"] += H
-    hess_state["n_rows"] += x32.shape[0]
+def make_hook(name: str):
+    def hook(_module, inputs, _output):
+        x = inputs[0]
+        if x.ndim > 2:
+            x = x.reshape(-1, x.shape[-1])
+        x32 = x.detach().to(torch.float32)
+        H = x32.T @ x32
+        if hess_state[name]["H"] is None:
+            hess_state[name]["H"] = H
+        else:
+            hess_state[name]["H"] += H
+        hess_state[name]["n_rows"] += x32.shape[0]
+        hess_state[name]["fires"] += 1
+    return hook
 
 
-handle = target_module.register_forward_hook(hessian_hook)
+print(f"  registering hooks on {len(HOOK_TARGETS)} MTP Linears:", flush=True)
+for tname in HOOK_TARGETS:
+    target_module = resolve_module(transformer, tname)
+    hess_state[tname] = {"H": None, "n_rows": 0, "fires": 0,
+                         "in_features": target_module.in_features,
+                         "out_features": target_module.out_features}
+    handles.append(target_module.register_forward_hook(make_hook(tname)))
+    print(f"    {tname:50s}  in={target_module.in_features:>5d}  out={target_module.out_features:>5d}", flush=True)
 
 
 def streaming_forward(input_ids_batch: torch.Tensor) -> torch.Tensor:
     """Forward CalibrationModel by streaming each layer to GPU, batch all
-    samples through it, then move it back. Returns the final logits."""
+    samples through it, then move it back. Returns the final logits.
+
+    The ``with torch.device(DEVICE):`` block makes torch's default device
+    cuda:0 for the duration. Upstream's forward path has multiple
+    compute-time tensor allocations (masks in Indexer, position indices in
+    sparse_attn fallback, etc.) that use the default device — without this
+    block they'd land on CPU and break cross-device matmuls.
+    """
     t = transformer
-    input_ids_dev = input_ids_batch.to(DEVICE)
+    with torch.device(DEVICE):
+        input_ids_dev = input_ids_batch.to(DEVICE)
 
-    # Embed
-    t.embed.to(DEVICE)
-    h = t.embed(input_ids_dev)
-    t.embed.to("cpu")
-    torch.cuda.empty_cache()
-
-    h = h.unsqueeze(2).repeat(1, 1, t.hc_mult, 1)  # [B, S, hc, d]
-
-    # Main 0..N-1
-    for i, layer in enumerate(t.layers):
-        layer.to(DEVICE)
-        h = layer(h, 0, input_ids_dev)
-        layer.to("cpu")
-        torch.cuda.empty_cache()
-        if (i + 1) % 10 == 0:
-            print(f"    layer {i + 1:>2d}/{len(t.layers)} done", flush=True)
-
-    # MTP — wrapper's contract: feed the pre-norm h.
-    # The hook on TARGET_LINEAR fires inside mtp.forward.
-    for mtp_layer in t.mtp:
-        mtp_layer.to(DEVICE)
-        _ = mtp_layer(h, 0, input_ids_dev)
-        mtp_layer.to("cpu")
+        # Embed
+        t.embed.to(DEVICE)
+        h = t.embed(input_ids_dev)
+        t.embed.to("cpu")
         torch.cuda.empty_cache()
 
-    # Final head — not strictly needed for the Hessian, skip to save time
-    return h
+        h = h.unsqueeze(2).repeat(1, 1, t.hc_mult, 1)  # [B, S, hc, d]
+
+        # Main 0..N-1
+        for i, layer in enumerate(t.layers):
+            layer.to(DEVICE)
+            h = layer(h, 0, input_ids_dev)
+            layer.to("cpu")
+            torch.cuda.empty_cache()
+            if (i + 1) % 10 == 0:
+                print(f"    layer {i + 1:>2d}/{len(t.layers)} done", flush=True)
+
+        # MTP — wrapper's contract: feed the pre-norm h.
+        # The hook on TARGET_LINEAR fires inside mtp.forward.
+        for mtp_layer in t.mtp:
+            mtp_layer.to(DEVICE)
+            _ = mtp_layer(h, 0, input_ids_dev)
+            mtp_layer.to("cpu")
+            torch.cuda.empty_cache()
+
+        # Final head — not strictly needed for the Hessian, skip to save time
+        return h
 
 
 torch.manual_seed(42)
@@ -214,16 +268,43 @@ with torch.inference_mode():
     streaming_forward(samples)
 print(f"  forward complete in {time.time() - t_fwd:.1f}s", flush=True)
 
-handle.remove()
+for h in handles:
+    h.remove()
 
-# Report Hessian
-H = hess_state["H"]
-n_rows = hess_state["n_rows"]
-
+# Per-target Hessian report
 print()
-print("HESSIAN REPORT:")
-print(f"  target Linear      : {TARGET_LINEAR}")
+print("HESSIAN REPORT (one row per hooked Linear):")
+print(f"  {'target':50s}  {'fires':>5s}  {'rows':>7s}  {'trace(H)':>14s}  {'diag.mean':>12s}  {'fro_norm':>14s}")
+any_fired = False
+for tname in HOOK_TARGETS:
+    s = hess_state[tname]
+    if s["fires"] == 0 or s["H"] is None:
+        print(f"  {tname:50s}  {0:>5d}  {'-':>7s}  {'(no fire)':>14s}  {'-':>12s}  {'-':>14s}")
+        continue
+    any_fired = True
+    H_i = s["H"]
+    n_rows_i = s["n_rows"]
+    print(
+        f"  {tname:50s}  "
+        f"{s['fires']:>5d}  "
+        f"{n_rows_i:>7d}  "
+        f"{H_i.trace().item():>14.4e}  "
+        f"{H_i.diagonal().mean().item():>12.4e}  "
+        f"{H_i.norm().item():>14.4e}"
+    )
+
+if not any_fired:
+    print("FAIL (b): no MTP Linear was hit — CalibrationModel.forward did not drive MTP")
+    sys.exit(1)
+
+# Detailed report on the primary target (must be unconditional)
+print()
+print(f"DETAIL on primary target ({TARGET_LINEAR}):")
+s = hess_state[TARGET_LINEAR]
+H = s["H"]
+n_rows = s["n_rows"]
 print(f"  H.shape            : {list(H.shape)}")
+print(f"  fires              : {s['fires']}")
 print(f"  X.T @ X rows fed   : {n_rows}")
 print(f"  trace(H)           : {H.trace().item():.6e}")
 print(f"  fro_norm(H)        : {H.norm().item():.6e}")
@@ -231,10 +312,10 @@ print(f"  diag.mean()        : {H.diagonal().mean().item():.6e}")
 print(f"  diag.std()         : {H.diagonal().std().item():.6e}")
 print(f"  off_diag.abs().mean: {(H - torch.diag(H.diagonal())).abs().mean().item():.6e}")
 
-# Cheap-ish condition number via eigvalsh (4096x4096 fp32 is fast)
-print("  computing eigvals (4096x4096 fp32)...", flush=True)
+# Cheap-ish condition number via eigvalsh
+print(f"  computing eigvals ({H.shape[0]}x{H.shape[1]} fp32)...", flush=True)
 t_e = time.time()
-H_reg = H + 1e-6 * torch.eye(H.shape[0])
+H_reg = H + 1e-6 * torch.eye(H.shape[0], device=H.device)
 try:
     eig = torch.linalg.eigvalsh(H_reg)
     print(f"  eigvals computed in {time.time() - t_e:.1f}s")
@@ -246,10 +327,18 @@ except RuntimeError as exc:
     print(f"  eigvalsh failed: {exc}")
 
 if H.trace().item() <= 0 or n_rows == 0:
-    print("FAIL (b): zero or non-positive Hessian — activations did not reach the MTP Linear")
+    print(f"FAIL (b): primary target {TARGET_LINEAR} hook fired but accumulated zero data")
     sys.exit(1)
 
-print(f"OK (b) — MTP Linear saw {n_rows} real activation rows, non-zero PSD Hessian", flush=True)
+# Expert routing diagnostic
+expert_targets = [t for t in HOOK_TARGETS if "experts.0" in t]
+exp_fires = sum(hess_state[t]["fires"] for t in expert_targets)
+print()
+print(f"  MoE expert 0 routing: {exp_fires} total fires across "
+      f"{len(expert_targets)} expert-0 Linears (expected 0 fires possible — Gate may not select expert 0 on synthetic samples)")
+
+print(f"OK (b) — primary target {TARGET_LINEAR} saw {n_rows} real activation rows, "
+      f"non-zero PSD Hessian", flush=True)
 
 
 # ===========================================================================

@@ -1,110 +1,90 @@
 #!/usr/bin/env python3
-"""Phase 2 — GPTQ W4A16-FP8 calibration of DeepSeek-V4-Flash, MTP included.
+"""Phase 2 — GPTQ W4A16-FP8 calibration with MTP included.
 
-Loads the Phase-1 BF16 dequant into an adapted upstream Transformer
-(``scripts.upstream``), wraps it so calibration forward flows through both
-the main 43 layers AND the MTP block (so GPTQ hooks fire on every Linear
-in mtp.0.*), then invokes ``llmcompressor.oneshot`` with the recipe
-specified in PHASE2_DESIGN.md.
-
-Recipe summary (DeepSeek-internal naming throughout):
-
-  attention   FP8_BLOCK  re:.*\\.attn\\.(wq_a|wq_b|wkv|wo_a|wo_b)$
-                          re:mtp\\.\\d+\\.(e_proj|h_proj)$
-  experts     W4A16      re:.*\\.ffn\\.experts\\.\\d+\\.(w1|w2|w3)$
-  ignore                  lm_head, embeddings, *norm*, *gate*, *shared_experts*,
-                          *hc_*, *attn_sink*, *compressor*, *indexer*
-
-CLI::
+Single-process invocation::
 
     python scripts/quantize_v4_w4a16_mtp.py \\
-        --input  /scratch/weights/bf16-mtp \\
-        --output /scratch/weights/w4a16-fp8-mtp \\
-        --config vendor/dsv4-upstream/config.json \\
-        --samples 768 --batch-size 4 --max-seq-len 512
+        --weights /scratch/weights/bf16-mtp \\
+        --config  vendor/dsv4-upstream/config.json \\
+        --output  /scratch/weights/w4a16-fp8-mtp-gptq \\
+        --samples 768 --max-seq-len 512 --batch-size 4
 
-Smoke test (fast, validates the pipeline before the 8-12h full run)::
+Multi-process (predecessor convention; required for the real run)::
 
-    python scripts/quantize_v4_w4a16_mtp.py ... --samples 4 --batch-size 1
+    torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py \\
+        --weights /scratch/weights/bf16-mtp \\
+        --config  vendor/dsv4-upstream/config.json \\
+        --output  /scratch/weights/w4a16-fp8-mtp-gptq \\
+        --samples 768 --max-seq-len 512 --batch-size 4
 
-Notes on memory + cost:
-  - The BF16 model is ~568 GB. Loads into CPU RAM (4 TB on p6-b300.48xlarge).
-  - llmcompressor's sequential GPTQ moves one Block at a time to GPU,
-    keeping per-Block residency at ~13 GB. With ``offload_hessians=True``
-    Hessians stream back to CPU between Linears.
-  - The full 768-sample run is 8-12 hours per PLAN.md.
+Dry-run (single-GPU, tiny sample, recipe restricted to one layer's Linears)::
+
+    python scripts/quantize_v4_w4a16_mtp.py ... --samples 4 --dry-run-one-layer
+
+The pipeline:
+  1. ``compressed_tensors.distributed.init_dist()`` (no-op for single-process)
+  2. ``scripts.upstream.apply_dist_state()`` to mirror dist into shim globals so
+     the vendored MoE shards experts across ranks (256 / world_size per rank).
+  3. Build ModelArgs from upstream config — ``dtype="bf16"``, ``expert_dtype``
+     and ``scale_fmt`` stripped, kv_cache buffer sized for ``max_seq_len``.
+  4. Instantiate shimmed Transformer (init-skip patched to 1.3s).
+  5. Stream-load BF16 weights via ``load_safetensors_into``. Hard-fail on any
+     unmatched safetensors key or unexpected missing state-dict key.
+  6. Wrap in ``CalibrationModel`` to drive main 0..N-1 then mtp[i] forward.
+  7. Wrap that in ``_GPTQCompatibleModel`` (a thin PreTrainedModel subclass)
+     so ``llmcompressor.oneshot`` can call ``model.save_pretrained``.
+  8. Load ``HuggingFaceH4/ultrachat_200k`` (predecessor's pinned corpus),
+     apply V4 manual chat encoding, tokenize to ``max_seq_len``.
+  9. Build ``GPTQModifier`` with the recipe topology:
+       - FP8_BLOCK on ``re:.*\\.attn\\.(wq_a|wq_b|wkv|wo_a|wo_b)$`` and
+         ``re:mtp\\.\\d+\\.(e_proj|h_proj)$``
+       - W4A16 on ``re:.*\\.ffn\\.experts\\.\\d+\\.(w1|w2|w3)$``
+       - ``actorder="static"`` (the GPTQ-vs-RTN tell)
+ 10. ``oneshot(model=..., recipe=..., dataset=..., sequential_targets=["Block"],
+     batch_size=..., max_seq_length=...)``.
+ 11. Save to ``output_dir`` — quantization_config will include actorder.
+
+If oneshot fails for non-trivial PreTrainedModel-interface reasons (the 2-hour
+bail-out condition), the script falls back to the lower-level
+``GPTQModifier`` lifecycle directly. See ``_run_via_modifier_direct``.
 """
 from __future__ import annotations
 
 import argparse
-import dataclasses
+import json
+import os
 import sys
+import time
 from pathlib import Path
 
-# Path setup so scripts.upstream resolves regardless of cwd
+# Make scripts.upstream importable regardless of cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 
-from scripts.upstream import Transformer, build_model_args
+from scripts.upstream import (
+    Transformer,
+    apply_dist_state,
+    build_model_args,
+)
+from scripts.calibration_model import CalibrationModel, _LogitsOut
 from scripts.load_bf16_into_transformer import load_safetensors_into
 
 
-# ----------------------------- model wrapper -----------------------------
-
-
-class CalibrationModel(nn.Module):
-    """Adapter that drives both main + MTP layers from a single forward.
-
-    Upstream Transformer.forward only flows through ``self.layers``; the MTP
-    block at ``self.mtp[0]`` is unused at inference time and would therefore
-    receive zero calibration activations under a plain forward.
-
-    This wrapper replicates the main forward path explicitly and then *also*
-    invokes the MTP block on the final main-layer hidden states. The MTP
-    logits are discarded — we only need the activations to flow through MTP
-    Linears so GPTQ hooks fire.
-
-    The forward signature accepts ``input_ids=...`` and returns an object
-    with ``.logits`` to match what ``llmcompressor.oneshot`` expects from an
-    HF-style PreTrainedModel.
-    """
-
-    def __init__(self, transformer: Transformer):
-        super().__init__()
-        self.transformer = transformer
-
-    def forward(self, input_ids: torch.Tensor, **_unused) -> "_LogitsOut":
-        t = self.transformer
-        h = t.embed(input_ids)
-        h = h.unsqueeze(2).repeat(1, 1, t.hc_mult, 1)
-        for layer in t.layers:
-            h = layer(h, 0, input_ids)
-        # Drive MTP — discard its logits, but its forward fires GPTQ hooks
-        # on e_proj, h_proj, attn.*, ffn.experts.*.
-        for mtp_layer in t.mtp:
-            _ = mtp_layer(h, 0, input_ids)
-        logits = t.head(h, t.hc_head_fn, t.hc_head_scale, t.hc_head_base, t.norm)
-        return _LogitsOut(logits)
-
-
-class _LogitsOut:
-    __slots__ = ("logits",)
-
-    def __init__(self, logits: torch.Tensor):
-        self.logits = logits
-
-
-# ----------------------------- dataset -----------------------------
-
-# V4 has no Jinja chat template; manual encoding per
-# https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/tree/main/encoding
+# =========================================================================
+# V4 manual chat encoding (predecessor recipe, verbatim)
+# =========================================================================
 BOS = "<｜begin▁of▁sentence｜>"
 EOS = "<｜end▁of▁sentence｜>"
 
 
 def preprocess_v4(example: dict) -> dict:
+    """V4 has no Jinja chat template — encode manually.
+
+    Source: dsv4-flash-w4a16-fp8/scripts/quantize_v4_w4a16.py:99-114
+    """
     text = BOS
     for message in example["messages"]:
         role = message["role"]
@@ -118,15 +98,185 @@ def preprocess_v4(example: dict) -> dict:
     return {"text": text}
 
 
-def build_calibration_dataset(
-    tokenizer, *, num_samples: int, max_seq_len: int, seed: int = 42
-):
-    """Load + tokenize HuggingFaceH4/ultrachat_200k with the V4 manual encoding."""
+# =========================================================================
+# PreTrainedModel bridge — option A
+# =========================================================================
+class _GPTQCompatibleConfig:
+    """Minimal config object satisfying the attrs llmcompressor.oneshot reads.
+
+    Why not a real PretrainedConfig: PretrainedConfig.__init__ pulls in HF
+    auto-mapping logic that doesn't gracefully accept our deepseek_v4_shim
+    model_type. Duck-type the fields oneshot reads instead.
+    """
+    model_type = "deepseek_v4_shim"
+    base_model_prefix = "model"
+    is_encoder_decoder = False
+
+    def __init__(self, args):
+        self.tie_word_embeddings = True   # MTP shares embed/head with main
+        self.hidden_size = args.dim
+        self.num_hidden_layers = args.n_layers + args.n_mtp_layers
+        self.vocab_size = args.vocab_size
+        self.architectures = ["DeepseekV4ForCausalLM"]
+        # Required by some HF utilities — set sentinel values
+        self.torch_dtype = "bfloat16"
+        self.use_return_dict = True
+        self.output_hidden_states = False
+        self.output_attentions = False
+        # quantization_config gets written by llmcompressor on save
+
+    def to_dict(self):
+        return {
+            k: v for k, v in self.__dict__.items()
+            if not k.startswith("_") and not callable(v)
+        }
+
+    def save_pretrained(self, save_directory, **_kw):
+        cfg = self.to_dict()
+        with open(os.path.join(save_directory, "config.json"), "w") as f:
+            json.dump(cfg, f, indent=2, default=str)
+
+
+class _GPTQCompatibleModel(nn.Module):
+    """Thin wrapper presenting a CalibrationModel as llmcompressor expects.
+
+    Why nn.Module not PreTrainedModel: PreTrainedModel.__init__ wires up
+    GenerationMixin and module-init logic that's slow and unnecessary. We
+    only need (forward returning .logits) + (config) + (save_pretrained).
+    """
+
+    def __init__(self, calibration_model: CalibrationModel, args):
+        super().__init__()
+        self.cal_model = calibration_model
+        self.config = _GPTQCompatibleConfig(args)
+
+    @property
+    def device(self) -> torch.device:
+        # llmcompressor sometimes asks; return cpu (model lives on CPU,
+        # sequential calibration moves blocks to GPU as needed).
+        return torch.device("cpu")
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return torch.bfloat16
+
+    def get_input_embeddings(self):
+        return self.cal_model.transformer.embed
+
+    def get_output_embeddings(self):
+        return self.cal_model.transformer.head
+
+    def tie_weights(self):
+        # embed/head sharing is wired in vendored Transformer.__init__.
+        pass
+
+    def forward(self, input_ids: torch.Tensor, **kwargs) -> _LogitsOut:
+        return self.cal_model(input_ids, **kwargs)
+
+    def save_pretrained(self, save_directory, save_compressed: bool = True, **kw):
+        """Save the underlying transformer's state_dict + config + quant config.
+
+        The compressed-tensors save flow is normally handled by
+        ``modify_save_pretrained`` wrapping a real ``PreTrainedModel``'s
+        save_pretrained. Since we're not a real PreTrainedModel, we write
+        the state dict to safetensors shards ourselves and let llmcompressor's
+        SessionRecipe-attached compressor produce the quantization_config.
+        """
+        from safetensors.torch import save_file
+        os.makedirs(save_directory, exist_ok=True)
+        self.config.save_pretrained(save_directory)
+
+        state = self.cal_model.transformer.state_dict()
+        # Shard at 5 GB per file
+        shards: list[dict[str, torch.Tensor]] = [{}]
+        bytes_per_shard = 5 * (1 << 30)
+        cur_bytes = 0
+        for name, tensor in state.items():
+            t_bytes = tensor.numel() * tensor.element_size()
+            if cur_bytes + t_bytes > bytes_per_shard and shards[-1]:
+                shards.append({})
+                cur_bytes = 0
+            shards[-1][name] = tensor
+            cur_bytes += t_bytes
+
+        n = len(shards)
+        weight_map = {}
+        for i, payload in enumerate(shards, start=1):
+            fname = f"model-{i:05d}-of-{n:05d}.safetensors"
+            save_file(payload, os.path.join(save_directory, fname),
+                      metadata={"format": "pt"})
+            for k in payload:
+                weight_map[k] = fname
+
+        idx = {
+            "metadata": {
+                "total_size": sum(t.numel() * t.element_size()
+                                  for s in shards for t in s.values())
+            },
+            "weight_map": weight_map,
+        }
+        with open(os.path.join(save_directory, "model.safetensors.index.json"), "w") as f:
+            json.dump(idx, f, indent=2)
+
+
+# =========================================================================
+# Recipe
+# =========================================================================
+def build_gptq_recipe(dry_run_one_layer: bool):
+    """Return a GPTQModifier with the predecessor's recipe topology."""
+    from compressed_tensors.quantization import QuantizationScheme
+    from compressed_tensors.quantization.quant_scheme import FP8_BLOCK, W4A16
+    from llmcompressor.modifiers.quantization import GPTQModifier
+
+    if dry_run_one_layer:
+        # Restrict to a SINGLE layer's Linears so the dry-run finishes fast.
+        attn_targets = [r"re:layers\.5\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$"]
+        expert_targets = [r"re:layers\.5\.ffn\.experts\.\d+\.(w1|w2|w3)$"]
+    else:
+        attn_targets = [
+            r"re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$",
+            r"re:mtp\.\d+\.(e_proj|h_proj)$",
+        ]
+        expert_targets = [r"re:.*\.ffn\.experts\.\d+\.(w1|w2|w3)$"]
+
+    return GPTQModifier(
+        config_groups={
+            "attention": QuantizationScheme(targets=attn_targets, **FP8_BLOCK),
+            "experts": QuantizationScheme(targets=expert_targets, **W4A16),
+        },
+        ignore=[
+            "head", "embed",
+            r"re:.*norm.*",
+            r"re:.*\.ffn\.gate$",
+            r"re:.*\.ffn\.gate\..*",
+            r"re:.*\.ffn\.shared_experts\..*",
+            r"re:.*\.hc_.*",
+            r"re:hc_.*",
+            r"re:.*\.attn\.attn_sink$",
+            r"re:.*\.attn\.(compressor|indexer)\..*",
+        ],
+        offload_hessians=True,
+        dampening_frac=0.1,
+        actorder="static",   # GPTQ-vs-RTN tell
+    )
+
+
+# =========================================================================
+# Dataset
+# =========================================================================
+def build_calibration_dataset(tokenizer, *, num_samples: int, max_seq_len: int,
+                              seed: int = 42):
+    """Predecessor's exact calibration recipe (locked in PLAN.md):
+
+        HuggingFaceH4/ultrachat_200k  train_sft  seed=42
+        768 samples, seq=512, V4 manual chat encoding.
+    """
     from datasets import load_dataset
 
+    # over-fetch (factor 2) so empty-after-preprocess samples don't shortfall
     ds = load_dataset(
         "HuggingFaceH4/ultrachat_200k",
-        split=f"train_sft[:{num_samples * 2}]",  # over-fetch; filter after preprocess
+        split=f"train_sft[:{num_samples * 2}]",
     )
     ds = ds.shuffle(seed=seed)
     ds = ds.map(preprocess_v4)
@@ -142,163 +292,172 @@ def build_calibration_dataset(
         )
 
     ds = ds.map(tokenize, remove_columns=ds.column_names)
-    return ds
+
+    # Record the HF dataset commit hash for reproducibility (per PLAN.md)
+    rev = None
+    try:
+        from datasets import builder as _ds_builder  # noqa: F401
+        # Best-effort: load_dataset caches under the resolved revision
+        info = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft[:1]")
+        rev = getattr(info, "info", None)
+        rev = getattr(rev, "version", None) if rev is not None else None
+    except Exception:
+        pass
+    return ds, rev
 
 
-# ----------------------------- recipe -----------------------------
-
-
-def build_recipe():
-    """GPTQ recipe: FP8_BLOCK attention (incl. MTP e_proj/h_proj) + W4A16 experts."""
-    from compressed_tensors.quantization.quant_scheme import (
-        FP8_BLOCK,
-        W4A16,
-        QuantizationScheme,
-    )
-    from llmcompressor.modifiers.quantization import GPTQModifier
-
-    return GPTQModifier(
-        config_groups={
-            "attention": QuantizationScheme(
-                targets=[
-                    r"re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$",
-                    r"re:mtp\.\d+\.(e_proj|h_proj)$",
-                ],
-                **FP8_BLOCK,
-            ),
-            "experts": QuantizationScheme(
-                targets=[
-                    r"re:.*\.ffn\.experts\.\d+\.(w1|w2|w3)$",
-                ],
-                **W4A16,
-            ),
-        },
-        ignore=[
-            "head",
-            "embed",
-            r"re:.*norm.*",
-            r"re:.*\.ffn\.gate$",
-            r"re:.*\.ffn\.gate\..*",
-            r"re:.*\.ffn\.shared_experts\..*",
-            r"re:.*\.hc_.*",
-            r"re:hc_.*",
-            r"re:.*\.attn\.attn_sink",
-            r"re:.*\.attn\.(compressor|indexer)\..*",
-        ],
-        offload_hessians=True,
-        dampening_frac=0.1,
-    )
-
-
-# ----------------------------- main -----------------------------
-
-
+# =========================================================================
+# Main
+# =========================================================================
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", required=True, help="Phase-1 BF16 dir")
+    ap.add_argument("--weights", required=True, help="Phase-1 BF16 dir")
+    ap.add_argument("--config", required=True,
+                    help="upstream config.json (vendor/dsv4-upstream/config.json)")
     ap.add_argument("--output", required=True, help="output W4A16-FP8 dir")
-    ap.add_argument("--config", required=True, help="vendor/dsv4-upstream/config.json")
-    ap.add_argument("--samples", type=int, default=768,
-                    help="calibration samples (use 4 for smoke test)")
+    ap.add_argument("--samples", type=int, default=768)
     ap.add_argument("--max-seq-len", type=int, default=512)
     ap.add_argument("--batch-size", type=int, default=4)
-    ap.add_argument("--smoke", action="store_true",
-                    help="overrides --samples=4 --batch-size=1; aborts after one oneshot batch")
+    ap.add_argument("--dry-run-one-layer", action="store_true",
+                    help="recipe restricted to layer 5 Linears only; "
+                         "for timing projection")
     args = ap.parse_args()
 
-    if args.smoke:
-        args.samples = 4
-        args.batch_size = 1
-        print("[smoke] samples=4 batch_size=1")
+    t_total = time.time()
 
-    # ---- model load ----
-    print(f"[args] config={args.config}")
+    # ---- 1. distributed init ---------------------------------------------
+    use_dist = "TORCHELASTIC_RUN_ID" in os.environ
+    if use_dist:
+        from compressed_tensors.distributed import init_dist
+        init_dist()
+    apply_dist_state()
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    is_main = rank == 0
+    if is_main:
+        print(f"[dist] world_size={world_size} rank={rank} use_dist={use_dist}",
+              flush=True)
+
+    # ---- 2. build ModelArgs ----------------------------------------------
     margs = build_model_args(
-        args.config,
-        max_batch_size=args.batch_size,
-        max_seq_len=args.max_seq_len,
+        args.config, max_batch_size=args.batch_size, max_seq_len=args.max_seq_len
     )
-    print(f"[args] dim={margs.dim} n_layers={margs.n_layers} "
-          f"n_routed_experts={margs.n_routed_experts} n_mtp_layers={margs.n_mtp_layers}")
+    if is_main:
+        print(f"[args] dim={margs.dim} n_layers={margs.n_layers} "
+              f"n_mtp_layers={margs.n_mtp_layers} "
+              f"n_routed_experts={margs.n_routed_experts}", flush=True)
 
-    print("[load] instantiating Transformer on CPU")
+    # ---- 3. instantiate Transformer + load BF16 --------------------------
     torch.set_default_dtype(torch.bfloat16)
     torch.set_default_device("cpu")
-    transformer = Transformer(margs)
 
-    print(f"[load] copying BF16 safetensors from {args.input}")
+    if is_main:
+        print("[load] instantiating Transformer on CPU (init-skip)", flush=True)
+    t0 = time.time()
+    transformer = Transformer(margs)
+    if is_main:
+        print(f"[load] instantiated in {time.time()-t0:.1f}s", flush=True)
+
+    if is_main:
+        print(f"[load] streaming safetensors from {args.weights}", flush=True)
+    t1 = time.time()
     loaded, unmatched, missing = load_safetensors_into(
-        transformer, Path(args.input), verbose=True
+        transformer, Path(args.weights), verbose=is_main
     )
-    print(f"[load] loaded={loaded} unmatched={len(unmatched)} missing={len(missing)}")
+    if is_main:
+        print(f"[load] loaded={loaded} unmatched={len(unmatched)} "
+              f"missing={len(missing)} in {time.time()-t1:.1f}s", flush=True)
     if unmatched:
-        print(f"[load] FATAL: {len(unmatched)} safetensors keys did not map to model params")
-        for k in unmatched[:10]:
-            print(f"  - {k}")
+        if is_main:
+            print(f"FATAL: unmatched safetensors keys: {unmatched[:10]}",
+                  flush=True)
         sys.exit(2)
 
-    # ---- tokenizer ----
+    # ---- 4. tokenizer + dataset ------------------------------------------
+    if is_main:
+        print(f"[tokenizer] loading from {args.weights}", flush=True)
     from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.weights, trust_remote_code=False)
 
-    print(f"[tokenizer] loading from {args.input}")
-    tokenizer = AutoTokenizer.from_pretrained(args.input, trust_remote_code=False)
-    print(f"[tokenizer] vocab_size={tokenizer.vocab_size}")
-
-    # ---- dataset ----
-    print(f"[dataset] preparing {args.samples} calibration samples")
-    ds = build_calibration_dataset(
+    if is_main:
+        print(f"[dataset] preparing {args.samples} samples from ultrachat_200k",
+              flush=True)
+    ds, ds_rev = build_calibration_dataset(
         tokenizer, num_samples=args.samples, max_seq_len=args.max_seq_len
     )
-    print(f"[dataset] ready: {len(ds)} samples")
+    if is_main:
+        print(f"[dataset] {len(ds)} samples ready; revision={ds_rev}", flush=True)
+        # Record the dataset commit hash per PLAN.md
+        findings_dir = Path("/data/findings") if Path("/data").exists() else Path("findings")
+        findings_dir.mkdir(parents=True, exist_ok=True)
+        with open(findings_dir / "calibration-dataset-commit.txt", "w") as f:
+            f.write(f"HuggingFaceH4/ultrachat_200k  train_sft  seed=42\n"
+                    f"resolved dataset version: {ds_rev}\n"
+                    f"samples={args.samples}  seq_len={args.max_seq_len}\n")
 
-    # ---- wrap for oneshot ----
-    model = CalibrationModel(transformer)
+    # ---- 5. wrap model ---------------------------------------------------
+    cal = CalibrationModel(transformer)
+    model = _GPTQCompatibleModel(cal, margs)
 
-    # ---- recipe + oneshot ----
-    print("[recipe] building GPTQModifier (FP8_BLOCK attn + W4A16 experts)")
-    recipe = build_recipe()
+    # ---- 6. patch topk_idxs for device matching --------------------------
+    # Same patch as the smoke harness — vendor's lru_cache'd topk fns
+    # return CPU tensors otherwise.
+    import dsv4_upstream_model as _dsv4
+    _orig_win = _dsv4.get_window_topk_idxs
+    _orig_cmp = _dsv4.get_compress_topk_idxs
 
-    from llmcompressor import oneshot
+    def _win_dev(*a, **kw):
+        r = _orig_win(*a, **kw)
+        # Move to the active default device (which the sequential calibrator
+        # sets to the GPU for the block currently being processed).
+        return r.to(torch.get_default_device()) if r.device != torch.get_default_device() else r
 
-    print("[oneshot] starting sequential GPTQ calibration over Block targets")
-    oneshot(
-        model=model,
-        dataset=ds,
-        recipe=recipe,
-        max_seq_length=args.max_seq_len,
-        num_calibration_samples=args.samples,
-        sequential_targets=["Block", "MTPBlock"],
-        batch_size=args.batch_size,
-    )
+    def _cmp_dev(*a, **kw):
+        r = _orig_cmp(*a, **kw)
+        return r.to(torch.get_default_device()) if r.device != torch.get_default_device() else r
 
-    # ---- save ----
-    out = Path(args.output)
-    out.mkdir(parents=True, exist_ok=True)
-    print(f"[save] writing quantized model to {out}")
+    _dsv4.get_window_topk_idxs = _win_dev
+    _dsv4.get_compress_topk_idxs = _cmp_dev
 
-    # llmcompressor save_pretrained / save_compressed expects a PreTrainedModel.
-    # Our wrapper isn't one; save raw state_dict shards via safetensors.
-    from safetensors.torch import save_file
-    state = model.transformer.state_dict()
-    # Naive sharding: 5 GB per shard
-    shards: dict[str, dict[str, torch.Tensor]] = {}
-    cur_bytes = 0
-    cur_idx = 1
-    for name, tensor in state.items():
-        if cur_bytes > 5 * (1 << 30):
-            cur_idx += 1
-            cur_bytes = 0
-        sname = f"model-{cur_idx:05d}-of-?????.safetensors"
-        shards.setdefault(sname, {})[name] = tensor
-        cur_bytes += tensor.numel() * tensor.element_size()
-    n = cur_idx
-    final = {}
-    for s, payload in shards.items():
-        new_name = s.replace("?????", f"{n:05d}")
-        save_file(payload, str(out / new_name))
-        final[new_name] = list(payload.keys())
-    print(f"[save] wrote {n} shards to {out}")
-    print("CALIBRATION_DONE")
+    # ---- 7. recipe + oneshot --------------------------------------------
+    if is_main:
+        print(f"[recipe] building GPTQ recipe (dry_run_one_layer={args.dry_run_one_layer})",
+              flush=True)
+    recipe = build_gptq_recipe(args.dry_run_one_layer)
+
+    if is_main:
+        print(f"[oneshot] starting calibration  "
+              f"samples={args.samples}  batch={args.batch_size}  "
+              f"seq={args.max_seq_len}", flush=True)
+    t_oneshot = time.time()
+
+    try:
+        from llmcompressor import oneshot
+
+        oneshot(
+            model=model,
+            tokenizer=tokenizer,
+            dataset=ds,
+            recipe=recipe,
+            max_seq_length=args.max_seq_len,
+            num_calibration_samples=args.samples,
+            sequential_targets=["Block"],
+            batch_size=args.batch_size,
+            output_dir=args.output,
+        )
+    except Exception as exc:
+        if is_main:
+            print(f"[oneshot] failed with: {type(exc).__name__}: {exc}",
+                  flush=True)
+            print("[oneshot] this is the option-A bail point — consider option B "
+                  "(direct GPTQModifier.apply). Investigate the traceback before retrying.",
+                  flush=True)
+        raise
+
+    if is_main:
+        print(f"[oneshot] done in {time.time()-t_oneshot:.1f}s", flush=True)
+        print(f"CALIBRATION_DONE total={time.time()-t_total:.1f}s output={args.output}",
+              flush=True)
 
 
 if __name__ == "__main__":
