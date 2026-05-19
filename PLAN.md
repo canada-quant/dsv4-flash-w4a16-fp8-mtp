@@ -163,11 +163,16 @@ torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py \
     --output ./weights/w4a16-fp8-mtp
 ```
 
-**Recipe topology** (extends the original by one layer):
+**Recipe topology** (extends the original by one layer; names corrected to
+DeepSeek internal convention after 2026-05-19 shard inspection — see
+`memory:dsv4_naming_convention`):
 
 - Routed experts, all 44 layers including MTP layer 43: W4A16 INT4 group=128 sym, GPTQ
+  - regex: `re:.*\.ffn\.experts\.\d+\.(w1|w2|w3)$`
 - Attention projections, all layers + MTP attention: FP8_BLOCK 128×128, data-free
-- `ignore` list: `lm_head`, embeddings, all `*norm*`, all `*gate*`, all `*shared_experts*`, all `*hc_*`, all `*attn_sink*`, plus MTP layer 43's `e_proj`, `h_proj`, `shared_head.*`, `enorm`, `hnorm`, `attn_norm`, `attn_sink`, `hc_0..3`, `ffn.gate`, `ffn.shared_experts`, `input_layernorm`, `post_attention_layernorm`
+  - regex: `re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$`
+- MTP-specific FP8_BLOCK additions (verified to ship as .scale-quantized in upstream): `re:mtp\.\d+\.(e_proj|h_proj)$`
+- `ignore` list (BF16 passthrough): `lm_head`, embeddings, `re:.*norm.*` (covers attn_norm, ffn_norm, enorm, hnorm, kv_norm, q_norm, shared_head.norm), `re:.*\.ffn\.gate$` (routing gate), `re:.*\.ffn\.shared_experts\..*`, `re:.*\.hc_.*` (hyper-connection params), `re:.*\.attn\.attn_sink`, `re:.*\.attn\.(compressor|indexer)\..*` (auxiliary submodules — separate calibration story)
 
 **Verification gate:** `scripts/verify_mtp_quantized.py ./weights/w4a16-fp8-mtp` must report:
 - MTP routed experts: 256 tensors with `weight_scale` (one per expert)

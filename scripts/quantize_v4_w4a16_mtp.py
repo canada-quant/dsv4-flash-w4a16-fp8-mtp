@@ -82,6 +82,23 @@ hook them. The MTP shim therefore only needs to make the Linear modules
 reachable by `model.named_modules()` and produce reasonable activations
 during the calibration forward.
 
+Inventory of mtp.0.* tensors in the upstream checkpoint (1,575 total,
+verified 2026-05-19):
+  ffn         1,544  — 256 experts x w1/w2/w3 weight+scale = 1,536,
+                       plus shared_experts.w1/w2/w3 weight+scale and gate
+  attn           13  — wq_a/wq_b/wkv/wo_a/wo_b weight+scale = 10, plus
+                       attn_sink, q_norm.weight, kv_norm.weight = 3
+  e_proj          2  — weight + scale (quantized — Linear(dim, dim))
+  h_proj          2  — weight + scale (quantized — Linear(dim, dim))
+  hc_*           9  — hc_attn_{fn,base,scale}, hc_ffn_{fn,base,scale},
+                       hc_head_{fn,base,scale} — all FP32 params, BF16 pass
+  attn_norm/ffn_norm/enorm/hnorm/norm  5  — RMSNorm weights, BF16
+                       (norm = shared_head.norm)
+
+The earlier PLAN.md note that ``e_proj`` and ``h_proj`` should be in the
+*ignore* list is incorrect — they ARE quantized in the upstream (each has a
+.scale). They belong in the FP8_BLOCK regex along with attn.wq_a etc.
+
 Recipe topology (target)
 ------------------------
 - routed experts, layers 0..42 AND mtp.0: W4A16 INT4 group=128 sym, GPTQ
