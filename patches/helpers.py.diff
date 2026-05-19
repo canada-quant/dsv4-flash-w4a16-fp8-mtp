@@ -1,0 +1,29 @@
+diff --git a/src/llmcompressor/pipelines/sequential/helpers.py b/src/llmcompressor/pipelines/sequential/helpers.py
+index 4e2dbfc..15da00c 100644
+--- a/src/llmcompressor/pipelines/sequential/helpers.py
++++ b/src/llmcompressor/pipelines/sequential/helpers.py
+@@ -208,10 +208,21 @@ class SequentialTracer(HFTracer):
+         # special extension allows models which pass kv caches to be traced
+         # usually use of `past_key_values` is disabled by `calibration_forward_context`
+         # however, some models such as deepseekv4 require their use
+-        # if isinstance(a, )
++        # PATCH (paul/dsv4): fill in kylesayrs's `# if isinstance(a, )` placeholder.
++        # transformers Cache subclasses (DynamicCache, OffloadedCache, HybridCache,
++        # EncoderDecoderCache, ...) are not natively encodable by fx. Mirror the
++        # PretrainedConfig pattern above: emit a fresh empty-constructor call so
++        # the traced graph produces a real cache instance at runtime. GPTQ only
++        # hooks Linear inputs/outputs, so it does not require real cache state.
++        _tf_cache_cls = None
++        try:
++            from transformers.cache_utils import Cache as _tf_cache_cls
++        except ImportError:
++            pass
++        if _tf_cache_cls is not None and isinstance(a, _tf_cache_cls):
++            return self.create_node("call_function", a.__class__, (), {})
+ 
+-        else:
+-            return super().create_arg(a)
++        return super().create_arg(a)
+ 
+     def is_leaf_module(self, module: Module, module_qualified_name: str) -> bool:
+         # do not trace non-ancestors or modules with offloaded params
