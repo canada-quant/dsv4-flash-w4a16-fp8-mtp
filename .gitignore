@@ -1,0 +1,44 @@
+# Model weights and large artifacts — never commit
+weights/
+quantized/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.gguf
+
+# Secrets
+*.pem
+*.key
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+venv-*/
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Caches
+.cache/
+.hf-cache/
+.torch-cache/
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Logs and findings (selectively commit final report only)
+*.log
+findings/*.tmp
+findings/raw/
