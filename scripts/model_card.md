@@ -19,7 +19,7 @@ library_name: transformers
 
 This is a quantized re-pack of [`deepseek-ai/DeepSeek-V4-Flash`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) with the **multi-token-prediction (MTP) layer included**:
 
-| | this repo | predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` | upstream `deepseek-ai/DeepSeek-V4-Flash` |
+| | this repo | predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` | upstream `deepseek-ai/DeepSeek-V4-Flash` |
 |---|---|---|---|
 | Routed experts | W4A16 INT4 g=128 sym | W4A16 INT4 g=128 sym | FP4 (e2m1, mxfp4) |
 | Attention / dense | FP8_BLOCK 128×128 | FP8_BLOCK 128×128 | FP8 e4m3 |
@@ -49,7 +49,7 @@ Names below are DeepSeek's *internal* naming convention (which is what the upstr
 ```bash
 # Single GPU pair (TP=2). Marlin MoE TP>2 bug #41511 still open in vLLM main
 # as of 2026-05-19, so deploy 4× TP=2 across the 8 GPUs of a B300 box.
-vllm serve pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP \
+vllm serve canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP \
     --tensor-parallel-size 2 \
     --kv-cache-dtype fp8 \
     --max-model-len 524288 \
@@ -57,13 +57,13 @@ vllm serve pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP \
     --trust-remote-code
 ```
 
-You need a vLLM with the two upstream patches applied: the `DeepseekV4ForCausalLM` and `DeepSeekV4MTP` classes both need `packed_modules_mapping`. Patch scripts at [`pasta-paul/dsv4-flash-w4a16-fp8-mtp/scripts/patch_v4_forcausal_packed_mapping.py`](https://github.com/pasta-paul/dsv4-flash-w4a16-fp8-mtp) and `patch_mtp_packed_mapping.py`.
+You need a vLLM with the two upstream patches applied: the `DeepseekV4ForCausalLM` and `DeepSeekV4MTP` classes both need `packed_modules_mapping`. Patch scripts at [`canada-quant/dsv4-flash-w4a16-fp8-mtp/scripts/patch_v4_forcausal_packed_mapping.py`](https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp) and `patch_mtp_packed_mapping.py`.
 
 The pinned vLLM commit known to load this checkpoint cleanly is `jasl/vllm@3424fba51301504262c3d8355e2560469f18c9c4`.
 
 ## Known caveats
 
-1. **RTN, not GPTQ.** The shipping artifact uses `llmcompressor.entrypoints.model_free.model_free_ptq` which does round-to-nearest weight quantization without Hessian refinement. FP8_BLOCK on BF16 weights is essentially lossless via RTN; W4A16 has measurable quality loss vs GPTQ on dense layers but is acceptable for the MTP draft head (where the metric is acceptance rate, not pure logit fidelity). For users who want GPTQ refinement, the [scripts/upstream/](https://github.com/pasta-paul/dsv4-flash-w4a16-fp8-mtp/tree/main/scripts/upstream) adapter is staged in the source repo with a passing smoke test; see `PHASE2_DESIGN.md`.
+1. **RTN, not GPTQ.** The shipping artifact uses `llmcompressor.entrypoints.model_free.model_free_ptq` which does round-to-nearest weight quantization without Hessian refinement. FP8_BLOCK on BF16 weights is essentially lossless via RTN; W4A16 has measurable quality loss vs GPTQ on dense layers but is acceptable for the MTP draft head (where the metric is acceptance rate, not pure logit fidelity). For users who want GPTQ refinement, the [scripts/upstream/](https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp/tree/main/scripts/upstream) adapter is staged in the source repo with a passing smoke test; see `PHASE2_DESIGN.md`.
 2. **Marlin MoE TP scale-sharding bug #41511** is still OPEN upstream as of 2026-05-19. Deploy as 4× TP=2 instances pinned to GPU pairs, NOT a single TP=8.
 3. **DeepSeek encoding only.** Upstream ships no Jinja chat template; use the [`encoding/`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/tree/main/encoding) folder's Python helpers to encode messages.
 
@@ -73,12 +73,12 @@ Built on AWS `p6-b300.48xlarge` (8× B300, Blackwell DC SM 10.0, 275 GB HBM3e pe
 
 ## Reproducibility
 
-Source repo + scripts + recipe + every patch: <https://github.com/pasta-paul/dsv4-flash-w4a16-fp8-mtp>. README of the source repo carries the full reproduce-from-scratch CLI.
+Source repo + scripts + recipe + every patch: <https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp>. README of the source repo carries the full reproduce-from-scratch CLI.
 
 ## Credits
 
 - DeepSeek for the base model and the inference reference implementation.
-- The `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` predecessor whose recipe topology this extends.
+- The `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` predecessor whose recipe topology this extends.
 - "Acti" for publishing the first MTP-enabled DSv4 quant — comparison point at 85.52 tok/s @ 524K on Blackwell DC.
 
 ## License

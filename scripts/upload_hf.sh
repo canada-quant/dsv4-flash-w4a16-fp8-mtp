@@ -8,7 +8,7 @@
 # Usage:
 #   HF_UPLOAD_OK=1 HF_TOKEN=hf_xxx bash scripts/upload_hf.sh \
 #       /scratch/weights/w4a16-fp8-mtp \
-#       pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP
+#       canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP
 
 set -euo pipefail
 

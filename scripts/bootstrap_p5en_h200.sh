@@ -2,7 +2,7 @@
 # Bootstrap an AWS p5en.48xlarge DLAMI box (8× H200, SM 9.0) for the DSv4 MTP re-quant.
 # Idempotent — safe to re-run after partial completion or instance restart.
 #
-# Why H200 (and not B300): the predecessor pastapaul/DeepSeek-V4-Flash-W4A16-FP8
+# Why H200 (and not B300): the predecessor canada-quant/DeepSeek-V4-Flash-W4A16-FP8
 # was successfully calibrated on H200, and our B300 attempt hit multi-rank NCCL
 # friction. Same recipe, proven hardware, plus the MTP-preservation deltas we
 # developed on the B300 box.

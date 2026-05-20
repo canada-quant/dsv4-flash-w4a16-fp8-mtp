@@ -9,7 +9,7 @@
 ssh -i ~/.ssh/h200-us-east-2.pem ubuntu@3.147.85.24
 
 # 2) If first time on this box: clone repo + bootstrap (idempotent, ~30 min including vLLM build)
-git clone git@github.com:pasta-paul/dsv4-flash-w4a16-fp8-mtp.git ~/dsv4-flash-w4a16-fp8-mtp
+git clone git@github.com:canada-quant/dsv4-flash-w4a16-fp8-mtp.git ~/dsv4-flash-w4a16-fp8-mtp
 bash ~/dsv4-flash-w4a16-fp8-mtp/scripts/bootstrap_p5en_h200.sh
 
 # 3) Phase 1 — download upstream and dequant (~10 min IO-bound)
@@ -86,7 +86,7 @@ These are the deltas we developed on B300 and still apply on H200:
 
 ## Don'ts
 
-- Don't push to `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` (the predecessor public repo — frozen).
+- Don't push to `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` (the predecessor public repo — frozen).
 - Don't run `upload_hf.sh` without the user's explicit go-ahead on Phase 8.
 - Don't stop the instance lightly — `/scratch/weights/*` is ephemeral. If you stop, snapshot to root EBS or S3 first.
 - AWS profile is `rozo` (NOT `default`) — see `memory:aws_profiles`.

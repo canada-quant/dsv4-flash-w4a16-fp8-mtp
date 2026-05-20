@@ -1,10 +1,10 @@
 # PLAN — DeepSeek-V4-Flash W4A16-FP8 + MTP re-quant
 
-> **Status snapshot (2026-05-20, H200 pivot):** Hardware pivoted from `p6-b300.48xlarge` (us-west-2) to `p5en.48xlarge` (us-east-2) after multi-rank NCCL friction on Blackwell. The H200 box is the **same hardware family** the predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` was successfully calibrated on, so the plan is now: run the predecessor's proven GPTQ recipe verbatim on H200 and layer in only the MTP-preservation deltas we developed during the B300 attempt (transformers regex patch, llm-compressor helpers patch, MTP shim in `scripts/quantize_v4_w4a16_mtp.py`, 7 dryrun friction fixes, decoupled MoE expert sharding). The earlier B300 phase progress (Phase 0/1 artifacts on the retired box) does not transfer — `/scratch` is ephemeral and the box is in another region. Restart from Phase 0 on the H200.
+> **Status snapshot (2026-05-20, H200 pivot):** Hardware pivoted from `p6-b300.48xlarge` (us-west-2) to `p5en.48xlarge` (us-east-2) after multi-rank NCCL friction on Blackwell. The H200 box is the **same hardware family** the predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` was successfully calibrated on, so the plan is now: run the predecessor's proven GPTQ recipe verbatim on H200 and layer in only the MTP-preservation deltas we developed during the B300 attempt (transformers regex patch, llm-compressor helpers patch, MTP shim in `scripts/quantize_v4_w4a16_mtp.py`, 7 dryrun friction fixes, decoupled MoE expert sharding). The earlier B300 phase progress (Phase 0/1 artifacts on the retired box) does not transfer — `/scratch` is ephemeral and the box is in another region. Restart from Phase 0 on the H200.
 >
 > **B300 status archived (2026-05-19):** Phase 0 ✓, Phase 1 ✓ (543 GB BF16 dequant), Phase 4 ✓ (vLLM built + patched). RTN fallback (`/scratch/weights/w4a16-fp8-mtp-rtn-fallback`) and GPTQ scaffolds with 7 dryrun fixes shipped. Multi-rank GPTQ aborted on NCCL; full GPTQ never completed. Useful reference, not a resumable state.
 
-**Goal:** Republish `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K (originally framed against Blackwell DC; H200 reference is the predecessor's own throughput numbers).
+**Goal:** Republish `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` as `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K (originally framed against Blackwell DC; H200 reference is the predecessor's own throughput numbers).
 
 **Hardware (active):** AWS `p5en.48xlarge` — 8× H200 (Hopper, SM 9.0, 143,771 MiB ≈ 140 GB HBM3e per GPU, ~1.14 TB total). 4.9 TB root EBS, 27.6 TB ephemeral LVM at `/opt/dlami/nvme`, 1.0 TB `/dev/shm`.
 
@@ -101,7 +101,7 @@ H200 path: run the bootstrap script — it handles cuda-toolkit-13-0, venv creat
 ```bash
 ssh -i ~/.ssh/h200-us-east-2.pem ubuntu@3.147.85.24
 sudo apt-get install -y git
-git clone git@github.com:pasta-paul/dsv4-flash-w4a16-fp8-mtp.git ~/dsv4-flash-w4a16-fp8-mtp
+git clone git@github.com:canada-quant/dsv4-flash-w4a16-fp8-mtp.git ~/dsv4-flash-w4a16-fp8-mtp
 bash ~/dsv4-flash-w4a16-fp8-mtp/scripts/bootstrap_p5en_h200.sh
 ```
 
@@ -150,7 +150,7 @@ python scripts/dequant_mtp.py \
 | Max seq length | **512** tokens |
 | Batch size | **4** per rank |
 | Chat encoding | DSv4 manual (no Jinja template). `BOS` prefix, then `<｜User｜>...` / `<｜Assistant｜></think>...{EOS}` per message |
-| Source | predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` calibration script verbatim — `/tmp/dsv4-sources/dsv4-flash-w4a16-fp8/scripts/quantize_v4_w4a16.py` lines 67-135 |
+| Source | predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` calibration script verbatim — `/tmp/dsv4-sources/dsv4-flash-w4a16-fp8/scripts/quantize_v4_w4a16.py` lines 67-135 |
 | HF dataset revision | record the commit hash returned by `load_dataset(..., revision=None)` at calibration kickoff into `findings/calibration-dataset-commit.txt` for reproducibility |
 
 The point of pinning is so this run is comparable to the predecessor's quality bar; deviating on calibration corpus means evals diverge for non-recipe reasons.
@@ -309,7 +309,7 @@ Front with a basic LB (Caddy round-robin or nginx least-conn) for throughput mea
 
 ### Phase 8 — HF release (1 h)
 
-- Upload to `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` (new repo, leave original published one alone)
+- Upload to `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP` (new repo, leave original published one alone)
 - Model card credits Acti as comparison point; explicit recipe section showing MTP layer 43 inclusion
 - Provide `vllm serve` one-liner with the `--speculative-config` flag
 
@@ -328,7 +328,7 @@ Front with a basic LB (Caddy round-robin or nginx least-conn) for throughput mea
 ## Out of scope (deliberate)
 
 - SFT / distillation / GRPO RL — that's the reasoning-agent repo's scope
-- NVFP4 alternative — would unlock ~3-4× MoE throughput on B300 via tcgen05 and bypass Marlin bug entirely, but breaks recipe continuity with `pastapaul/DeepSeek-V4-Flash-W4A16-FP8`. Revisit if a separate Blackwell-only SKU is wanted later.
+- NVFP4 alternative — would unlock ~3-4× MoE throughput on B300 via tcgen05 and bypass Marlin bug entirely, but breaks recipe continuity with `canada-quant/DeepSeek-V4-Flash-W4A16-FP8`. Revisit if a separate Blackwell-only SKU is wanted later.
 - Multi-node / NVL72 — single 8× B300 box only
 - ROCm — only AMD-relevant CUDA PRs touched (#41812, #41946, #42810); not deploying to AMD
 
@@ -363,5 +363,5 @@ dsv4-flash-w4a16-fp8-mtp/
 1. **vLLM base:** jasl PR #41834 head (includes SM12x fallbacks, inert on B300) vs upstream main at #43077? Both valid. Jasl is more battle-tested with your prior recipe; upstream is leaner. Default to jasl unless you want fewer moving parts.
 2. **num_speculative_tokens:** start at 2 (B300 native) or 1 (your H200 baseline)? Recommend 2 with fall-back validation.
 3. **NVFP4 sidecar:** want a v2 entry in the plan for an NVFP4-FP8 + MTP variant on B300 as a follow-on, or strictly W4A16 only?
-4. **HF repo name:** `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` or different suffix?
+4. **HF repo name:** `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP` or different suffix?
 5. **AWS region / spot vs on-demand for p6-b300.48xlarge** — informs the bootstrap script's region default.

@@ -2,9 +2,9 @@
 
 Re-quantization of [`deepseek-ai/DeepSeek-V4-Flash`](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash) to W4A16-FP8 with the **MTP (multi-token-prediction) layer correctly included**, targeting AWS `p6-b300.48xlarge` (8× B300, Blackwell DC SM 10.0).
 
-The predecessor quant at [`pastapaul/DeepSeek-V4-Flash-W4A16-FP8`](https://huggingface.co/pastapaul/DeepSeek-V4-Flash-W4A16-FP8) shipped without the MTP block — `transformers` 5.8.1's `DeepseekV4PreTrainedModel._keys_to_ignore_on_load_unexpected` silently drops every `mtp.*` key on `from_pretrained`. This repo isolates and fixes that.
+The predecessor quant at [`canada-quant/DeepSeek-V4-Flash-W4A16-FP8`](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-W4A16-FP8) shipped without the MTP block — `transformers` 5.8.1's `DeepseekV4PreTrainedModel._keys_to_ignore_on_load_unexpected` silently drops every `mtp.*` key on `from_pretrained`. This repo isolates and fixes that.
 
-Sibling, non-overlapping scope to [`dsv4-flash-reasoning-agent`](https://github.com/pasta-paul/dsv4-flash-reasoning-agent) (which adds SFT + GRPO on top of the quant). This repo is **quant-only**.
+Sibling, non-overlapping scope to [`dsv4-flash-reasoning-agent`](https://github.com/canada-quant/dsv4-flash-reasoning-agent) (which adds SFT + GRPO on top of the quant). This repo is **quant-only**.
 
 ## Status
 
@@ -20,7 +20,7 @@ Sibling, non-overlapping scope to [`dsv4-flash-reasoning-agent`](https://github.
 | 5 | Smoke serve TP=2 with `--speculative-config method=mtp num_speculative_tokens=2` on the **GPTQ** artifact | ⏳ waiting on Phase 2/3 | — |
 | 6 | Benchmarks (chat-smoke, toolcall15, GSM8K, HumanEval, NIAH, MTP-acceptance) | ⏳ next | ~4 h |
 | 7 | 4× TP=2 instances pinned to GPU pairs | ⏳ next | ~2 h |
-| 8 | HF release as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` | ⏳ permission-gated | ~1 h |
+| 8 | HF release as `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP` | ⏳ permission-gated | ~1 h |
 
 See [`PLAN.md`](PLAN.md) for the full per-phase plan and [`patches/VERSIONS.md`](patches/VERSIONS.md) for patch provenance.
 
@@ -42,7 +42,7 @@ Same topology as the predecessor quant — FP8_BLOCK 128×128 attention + W4A16 
 
 ## Target output
 
-- HF model: `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` (Phase 8, permission-gated)
+- HF model: `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP` (Phase 8, permission-gated)
 - Decode target: **>85.52 tok/s @ 524K** on 8× B300 with `--speculative-config '{"method":"mtp","num_speculative_tokens":2}'`
 - Eval bar: GSM8K ≥94.5%, HumanEval pass@1 ≥77%, toolcall15 ≥26/30, NIAH 5/5 @ 524K
 

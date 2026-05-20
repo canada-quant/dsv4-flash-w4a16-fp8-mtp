@@ -6,7 +6,7 @@ If you're a Claude Code agent resuming work in this repo, **read this first** al
 
 This repo re-quantizes DeepSeek-V4-Flash to W4A16-FP8 with the MTP layer included. The predecessor public quant shipped without MTP because `transformers` 5.8.1 silently drops `mtp.*` keys. See README.md "Status" for the per-phase status table.
 
-**Active strategy (2026-05-20):** pivoted off B300 to H200 after multi-rank NCCL friction on Blackwell. The H200 box is the *same hardware family* the predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` was successfully calibrated on, so we run the predecessor's proven GPTQ recipe verbatim and layer in only the MTP-preservation deltas we developed on the B300 attempt (transformers regex patch, llm-compressor helpers patch, MTP shim, 7 dryrun friction fixes, decoupled MoE expert sharding). Blackwell-specific env (`TORCH_CUDA_ARCH_LIST="10.0a"`, no `expandable_segments`) is dropped — use Hopper defaults.
+**Active strategy (2026-05-20):** pivoted off B300 to H200 after multi-rank NCCL friction on Blackwell. The H200 box is the *same hardware family* the predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` was successfully calibrated on, so we run the predecessor's proven GPTQ recipe verbatim and layer in only the MTP-preservation deltas we developed on the B300 attempt (transformers regex patch, llm-compressor helpers patch, MTP shim, 7 dryrun friction fixes, decoupled MoE expert sharding). Blackwell-specific env (`TORCH_CUDA_ARCH_LIST="10.0a"`, no `expandable_segments`) is dropped — use Hopper defaults.
 
 ## Hardware + AWS
 
@@ -43,7 +43,7 @@ No separate `/data` EBS this time — there's no second persistent disk by defau
 - For risky/expensive actions (HF upload, force-push, instance termination), confirm before executing.
 - `aws --profile rozo --region us-east-2 ...` for AWS calls against the H200 box. (Profile `rozo`; region changed from `us-west-2` on the retired B300 box.)
 - Commit messages: include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` at the bottom (multiline form via heredoc, not `git commit -m`-with-flags).
-- The repo is **PRIVATE** at `github.com/pasta-paul/dsv4-flash-w4a16-fp8-mtp`. Do not publish until the user explicitly authorizes Phase 8.
+- The repo is **PRIVATE** at `github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp`. Do not publish until the user explicitly authorizes Phase 8.
 
 ## What's where in the repo
 

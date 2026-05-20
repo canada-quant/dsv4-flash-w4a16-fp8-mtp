@@ -12,7 +12,7 @@ Why RTN is acceptable here:
     lossless via RTN (FP8 has ~3 mantissa bits, more than enough for
     BF16-trained activations); GPTQ refinement gives minor quality gains.
   - W4A16 is noticeably worse via RTN vs GPTQ on the main 43 layers,
-    but the **predecessor's** `pastapaul/DeepSeek-V4-Flash-W4A16-FP8`
+    but the **predecessor's** `canada-quant/DeepSeek-V4-Flash-W4A16-FP8`
     already exists as a GPTQ-calibrated W4A16 main model. The unique
     contribution of *this* repo is the MTP layer being included; that
     contribution is preserved end-to-end here even with RTN.
