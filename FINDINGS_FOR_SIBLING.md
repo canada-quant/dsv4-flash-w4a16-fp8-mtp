@@ -10,8 +10,9 @@ question matters.
 
 **Date:** 2026-05-20.
 **Author:** H200 agent (this repo).
-**Status:** preliminary — mini-GPTQ smoke is running at time of writing;
-this doc will be amended with the smoke result before Phase 2 launch.
+**Status:** mini-GPTQ smoke COMPLETED but with a SECONDARY HANG inside
+`compress_module_list` (not in our patches). Phase 2 launch is BLOCKED on
+diagnosing this second deadlock. See "Mini-smoke result" section below.
 
 ---
 
@@ -192,4 +193,124 @@ doc to the B300 agent depends on which point they're at:
 - If B300 has filed an issue already → cross-link our `CONTRIBUTIONS_QUEUE.md`
   C1 entry so the canada-quant brand work consolidates.
 
-Mini-smoke result will be appended to this doc once the run completes.
+## Mini-smoke result (2026-05-20, post-run)
+
+Setup: `--samples 8 --batch-size 1 --max-seq-len 128 --dry-run-one-layer`
+(restricts recipe to layer 5 only). 8 ranks, p5en.48xlarge H200.
+
+### What worked
+
+1. **Sharding invariant passed cleanly:**
+   ```
+   [shard-invariant] OK — 43 main MoE layers + 1 MTP layer(s),
+   11264 total (layer,expert) tuples, disjoint across 8 ranks
+   (per-rank counts: [1408, 1408, 1408, 1408, 1408, 1408, 1408, 1408])
+   ```
+   MTP is correctly included; experts are disjoint.
+
+2. **All three patches applied:**
+   ```
+   [patch A: Observer.synchronize] applied (world_size=8)
+   [patch B: _reduce_hessian] applied (world_size=8)
+   [patch C: _broadcast_quantized_params] applied (world_size=8)
+   ```
+
+3. **Calibration completed on subgraph 6/45** (the layer-5 subgraph):
+   `(6/45): Calibrating: 100% ...`
+
+4. **Patch B fired correctly:**
+   ```
+   [patch B] skipped reduce for 48 sharded modules; reducing 4 replicated
+   ```
+   The `_reduce_hessian_to_target_rank` filtered out the 48 expert-weight
+   instances (sharded across ranks) and delegated only the 4 replicated
+   attn modules to the original implementation. The reduce on those 4
+   completed without NCCL hang. **The disjoint-set NCCL hang the patches
+   were designed to prevent did not occur.**
+
+### What broke
+
+After patch B's reduce, all 8 ranks entered `compress_module_list`
+(`gptq/base.py:304`) and **all 8 ranks hung indefinitely** (>17 minutes,
+killed manually).
+
+Native py-spy backtrace (identical on multiple ranks):
+
+```
+cuStreamSynchronize           (libcuda.so.595.71.05)
+cudaStreamSynchronize         (libcudart.so.13)
+at::native::_local_scalar_dense_cuda_impl<c10::BFloat16>
+at::native::_local_scalar_dense_cuda
+at::Tensor::item<double>      (libtorch_cpu.so)
+__torch_function__            (torch/utils/_device.py:122)
+compress_module_list          (llmcompressor/modifiers/gptq/base.py:304)
+_patched                      (gptq_checkpoint.py:212)
+compress_modules              (llmcompressor/modifiers/gptq/base.py:293)
+```
+
+The exact stuck call is `int(num_samples)` on line 304:
+
+```python
+303      logger.info(f"Quantizing {name} using {int(num_samples)} samples")
+304      with (
+```
+
+`num_samples` is a CUDA scalar tensor that was the destination of a
+`dist.reduce` call (for the 4 replicated modules where this rank is
+`target_rank`). `int(num_samples)` triggers `cudaStreamSynchronize` on
+the default stream — which blocks forever.
+
+### Hypothesis (not yet verified)
+
+The vendored `Transformer.forward` (specifically `MoE.forward` under our
+decoupled-expert shard) likely issues cross-rank NCCL kernels during
+calibration that don't properly drain into the default stream before
+`compress_module_list` reads `num_samples`. The patches close the
+*explicit* collective-on-disjoint-modules hang, but a deeper
+stream-synchronization issue persists in the MoE forward path itself.
+
+Other plausible angles to investigate:
+
+- `module_to_rank` may map some sharded modules to non-owning ranks,
+  causing `_orig`'s `dist.reduce` to enqueue on tensors that don't
+  exist on those ranks (would corrupt state but not hang per se).
+- The wait_for_comms inside `_orig` may not register a CUDA event
+  on the default stream — so subsequent `int(...)` reads block
+  waiting for an NCCL kernel that nobody else completes.
+- `align_module_device(module)` for sharded experts may trigger
+  cross-rank work that this rank's view of the model can't satisfy.
+
+### What this means for the NVFP4 sibling
+
+**You probably DON'T see this exact hang** because your
+`QuantizationModifier` (RTN) doesn't compute Hessians or invoke
+`compress_module_list` with cross-rank coordination. Your equivalent
+risk is whatever your RTN path does in `compress_modules` — gate it
+the same way: py-spy the moment it stops printing progress, find the
+synchronize point, and apply a targeted fix.
+
+**For both workstreams:** the patches in `multirank_patches.py` are
+NECESSARY but NOT SUFFICIENT to ship a multi-rank artifact. There's
+real stream-synchronization work left in the MoE forward path.
+
+### Status of upstream issue
+
+`vllm-project/llm-compressor#2734` filed before the hang was diagnosed.
+The issue body remains accurate on the patches' purpose and the
+disjoint-collective hang they prevent, but adding a comment now to
+flag the secondary hang as a separate downstream issue (likely needs a
+separate PR).
+
+### Next steps before Phase 2 launch
+
+1. Investigate `MoE.forward` under decoupled shard for unbalanced NCCL
+   work (one rank queues a collective the others don't match).
+2. Test inserting `torch.cuda.synchronize()` + `dist.barrier()` between
+   the calibration loop and `compress_module_list` entry to force
+   stream drain.
+3. Verify `module_to_rank` consistency across ranks.
+4. If 2 doesn't fix it, study the NCCL stream's pending work via
+   `nsys`/`nvprof`.
+
+Phase 2 full launch is BLOCKED on this. Mandatory check-in with user
+before continuing.
