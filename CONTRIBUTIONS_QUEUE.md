@@ -18,9 +18,25 @@ maintainers comment on direction before the PR lands.
 
 ## Active candidates
 
-### C7 ⏳ — `huggingface/transformers`: add `DeepseekV4NextNPredictor` class (MTP support)
+### C9 🔴 — `huggingface/transformers`: conversion_mapping doesn't cover mtp.* paths
 
 - **Upstream:** `huggingface/transformers`
+- **Issue:** https://github.com/huggingface/transformers/issues/46129
+  (filed 2026-05-20)
+- **Discovered while** running first end-to-end smoke after #46127's class
+  shim landed. Even with the silent-drop regex removed and the MTP class
+  instantiated, MTP keys arrive in upstream form
+  (`mtp.0.attn.wq_a.weight`) and don't match the HF-named submodules
+  (`mtp.0.self_attn.q_a_proj.weight`). Silent random-init of MTP block.
+- **Companion to:** transformers#46127 (the class shim). Together they
+  close the MTP-preservation gap. Either alone is insufficient.
+- **Files referenced (inline-only):** patch sketch with all 33 mappings,
+  runtime workaround, 50-line tensor-value verification assertion.
+
+### C7 🟡 — `huggingface/transformers`: add `DeepseekV4NextNPredictor` class (MTP support)
+
+- **Upstream:** `huggingface/transformers`
+- **PR:** https://github.com/huggingface/transformers/pull/46127 (filed 2026-05-20)
 - **Files in our repo:** `patches/transformers_dsv4_mtp.py.diff` (the PR diff),
   `scripts/transformers_mtp_shim.py` (runtime equivalent for our internal use),
   `patches/UPSTREAM_PR_DRAFTS.md` (PR plan)
@@ -37,9 +53,11 @@ maintainers comment on direction before the PR lands.
   forward wiring. See `patches/UPSTREAM_PR_DRAFTS.md` § P1.
 - **Filing order:** file first; P2 (llm-compressor mapping extension) depends on this.
 
-### C8 ⏳ — `vllm-project/llm-compressor`: extend ARCH_TO_2D_MAPPINGS for MTP
+### C8 🟡 — `vllm-project/llm-compressor`: extend ARCH_TO_2D_MAPPINGS for MTP
 
 - **Upstream:** `vllm-project/llm-compressor`
+- **PR:** https://github.com/vllm-project/llm-compressor/pull/2739
+  (filed 2026-05-20; based on `kylesayrs/transformers-v5`)
 - **Files in our repo:** `patches/llmc_dsv4_mtp_conversion_mappings.diff`,
   `patches/UPSTREAM_PR_DRAFTS.md`
 - **Severity:** depends on C7 landing first. Once `DeepseekV4NextNPredictor`
