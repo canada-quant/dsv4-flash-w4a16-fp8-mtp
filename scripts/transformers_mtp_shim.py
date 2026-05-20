@@ -42,18 +42,26 @@ def install_mtp_shim(verbose: bool = True) -> None:
     RMSNorm = _m.DeepseekV4RMSNorm
 
     def _extend_layer_type_lists(config):
-        """See docstring on the patched __init__ below."""
+        """Extend `config.layer_types` and `config.mlp_layer_types` to cover
+        the MTP layer's index. The MTP block in DSv4-Flash uses a SIMPLER
+        attention than the main `compressed_sparse_attention` /
+        `heavily_compressed_attention` types — it has only the
+        wq_a/wq_b/wkv/wo_a/wo_b projections + attn_sink/q_norm/kv_norm, with
+        NO compressor and NO indexer submodules. The matching layer_type is
+        `sliding_attention` (which sets `self.compressor = None` in
+        `DeepseekV4Attention.__init__`).
+
+        For mlp_layer_types, MTP uses the standard `moe` type — same MoE
+        structure as the main layers (256 routed experts + shared experts).
+        """
         n_mtp = getattr(config, "num_nextn_predict_layers", 0)
         if n_mtp <= 0:
             return
-        for attr in ("layer_types", "mlp_layer_types"):
-            lst = getattr(config, attr, None)
-            if lst is None:
-                continue
-            need = config.num_hidden_layers + n_mtp
-            if len(lst) < need:
-                extension = [lst[-1]] * (need - len(lst))
-                setattr(config, attr, list(lst) + extension)
+        need = config.num_hidden_layers + n_mtp
+        if getattr(config, "layer_types", None) is not None and len(config.layer_types) < need:
+            config.layer_types = list(config.layer_types) + ["sliding_attention"] * (need - len(config.layer_types))
+        if getattr(config, "mlp_layer_types", None) is not None and len(config.mlp_layer_types) < need:
+            config.mlp_layer_types = list(config.mlp_layer_types) + ["moe"] * (need - len(config.mlp_layer_types))
 
     class DeepseekV4NextNPredictor(DecoderLayer):
         """DSv4 MTP draft-head block — see
@@ -115,4 +123,66 @@ def install_mtp_shim(verbose: bool = True) -> None:
               flush=True)
 
 
-__all__ = ["install_mtp_shim"]
+def install_mtp_conversion_mapping_extension(verbose: bool = True) -> None:
+    """Extend `transformers.conversion_mapping`'s registered DSv4 entries
+    with `mtp.<M>.*` equivalents for every `^layers\\.` entry.
+
+    Background: transformers ships 41 `WeightRenaming` entries for DSv4 that
+    rename the upstream-internal checkpoint naming to HF naming (`embed.`
+    → `embed_tokens.`, `attn.` → `self_attn.`, `ffn.` → `mlp.`,
+    `attn_norm.` → `input_layernorm.`, `attn.attn_sink` → `self_attn.sinks`,
+    `hc_attn_fn` → `attn_hc.fn`, etc.). All are anchored at `^layers\\.`.
+
+    The MTP block (`mtp.0.*`) has structurally the same submodules as a
+    `DeepseekV4DecoderLayer` (per the `DeepseekV4NextNPredictor` shim that
+    inherits from it), so it needs the same rename rules — but with the
+    anchor swapped from `^layers\\.` to `^mtp\\.`. Without this, `mtp.0.*`
+    keys stay in upstream naming after load (e.g. `mtp.0.attn.wq_a.weight`),
+    don't match any of the shim's submodules (which use HF names like
+    `mtp.0.self_attn.q_a_proj.weight`), and the modules are flagged as
+    uninitialized → `_init_weights` random-initializes them.
+
+    This helper builds the parallel `mtp.\\d+.*` entries by string-substitution
+    on the existing `^layers\\.(\\d+)\\.` patterns, and re-registers the
+    combined list.
+    """
+    from transformers.conversion_mapping import (
+        get_checkpoint_conversion_mapping,
+        register_checkpoint_conversion_mapping,
+    )
+    existing = get_checkpoint_conversion_mapping("deepseek_v4")
+    added = []
+    for entry in existing:
+        sp = getattr(entry, "source_patterns", None)
+        tp = getattr(entry, "target_patterns", None)
+        if sp is None or tp is None:
+            continue
+        # Normalize: both may be list-of-strings or string. We treat lists.
+        sp_list = sp if isinstance(sp, (list, tuple)) else [sp]
+        tp_list = tp if isinstance(tp, (list, tuple)) else [tp]
+        # Only convert entries anchored at `^layers\.(\d+)\.` — these map main
+        # decoder layer keys. The 6 entries that match `^embed\.`, `^head\.`,
+        # `^norm\.`, `^hc_head_*` are model-level and don't apply to MTP.
+        new_sp = []
+        new_tp = []
+        for s, t in zip(sp_list, tp_list):
+            if isinstance(s, str) and s.startswith(r"^layers\.(\d+)\."):
+                new_sp.append(s.replace(r"^layers\.(\d+)\.", r"^mtp\.(\d+)\.", 1))
+                new_tp.append(t.replace("layers.\\1.", "mtp.\\1.", 1))
+        if new_sp:
+            # Reconstruct a WeightRenaming with the same constructor kwargs
+            cls = type(entry)
+            mtp_entry = cls(
+                source_patterns=new_sp if len(new_sp) > 1 else new_sp[0],
+                target_patterns=new_tp if len(new_tp) > 1 else new_tp[0],
+            )
+            added.append(mtp_entry)
+    combined = list(existing) + added
+    register_checkpoint_conversion_mapping("deepseek_v4", combined, overwrite=True)
+    if verbose:
+        print(f"[mtp-conv-map] added {len(added)} mtp.\\d+.* entries to "
+              f"deepseek_v4 conversion_mapping (was {len(existing)}, "
+              f"now {len(combined)})", flush=True)
+
+
+__all__ = ["install_mtp_shim", "install_mtp_conversion_mapping_extension"]

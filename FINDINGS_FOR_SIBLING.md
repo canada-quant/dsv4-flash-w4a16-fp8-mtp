@@ -193,7 +193,156 @@ doc to the B300 agent depends on which point they're at:
 - If B300 has filed an issue already → cross-link our `CONTRIBUTIONS_QUEUE.md`
   C1 entry so the canada-quant brand work consolidates.
 
-## Mini-smoke result (2026-05-20, post-run)
+## Post-Option-D pivot findings (2026-05-20, post-pivot)
+
+After Option A (decoupled-shard) was diagnosed as structurally dead, we
+moved to Option D (predecessor's `linearize_moe_model` + auto_offload +
+8-rank DDP recipe + our MTP class shim). During the first end-to-end smoke
+on Option D, we hit two compounding silent-correctness bugs that the B300
+NVFP4 sibling will likely hit identically if its MTP shim uses the same
+patterns. Both bugs are filed upstream (`huggingface/transformers#46127`,
+`vllm-project/llm-compressor#2735`, `#2739`) and have to be fixed in any
+DSv4 MTP-preserving shim.
+
+### Bug N1 — MTP layer_type, NOT "repeat last main layer's type"
+
+**Cause:** the MTP block in DSv4-Flash uses a *simpler* attention than
+the main layers — only the standard projections (`wq_a, wq_b, wkv, wo_a,
+wo_b, q_norm, kv_norm, attn_sink`), **no `compressor.*` or `indexer.*`
+keys**. Inspection of an upstream-format MTP checkpoint confirms this:
+
+```
+mtp.0.attn.attn_sink, mtp.0.attn.kv_norm.weight, mtp.0.attn.q_norm.weight,
+mtp.0.attn.wkv.weight, mtp.0.attn.wo_a.weight, mtp.0.attn.wo_b.weight,
+mtp.0.attn.wq_a.weight, mtp.0.attn.wq_b.weight, mtp.0.attn_norm.weight,
+mtp.0.e_proj.weight, mtp.0.enorm.weight, mtp.0.ffn.experts.*, ...
+```
+
+The DSv4 config has three attention `layer_types`:
+
+```
+Counter({'compressed_sparse_attention': 21,    # full attn + Compressor + Indexer
+         'heavily_compressed_attention': 20,   # full attn + Compressor
+         'sliding_attention': 2})              # full attn, compressor = None
+```
+
+`DeepseekV4Attention.__init__` instantiates the compressor *conditionally*:
+
+```python
+self.compressor = (
+    COMPRESSOR_CLASSES[self.layer_type](config)
+    if self.layer_type != "sliding_attention" else None
+)
+```
+
+**Wrong shim choice:** copy the last main-layer's `layer_type`
+(`compressed_sparse_attention`). MTP's `DeepseekV4Attention` then
+instantiates empty `compressor` + `indexer` submodules → checkpoint has
+no `mtp.0.attn.compressor.*` keys to fill them → those modules stay
+uninitialized → `_initialize_weights` falls through to `_init_weights`
+→ `init.normal_` random-initializes the MTP block. Silent corruption of
+the MTP draft head; the artifact ships with random MTP weights.
+
+**Correct shim choice:** `layer_types[mtp_idx] = "sliding_attention"`,
+`mlp_layer_types[mtp_idx] = "moe"`.
+
+**For the B300 NVFP4 sibling:** if your MTP shim extends `config.layer_types`,
+verify you're using `"sliding_attention"` for the MTP layer. If you used
+`"compressed_sparse_attention"` or copied the last main-layer's type,
+your shipped artifact has random MTP weights regardless of whether the
+calibration "succeeded."
+
+### Bug N2 — `conversion_mapping["deepseek_v4"]` doesn't cover `mtp.*` paths
+
+**Cause:** `transformers.conversion_mapping.get_checkpoint_conversion_mapping("deepseek_v4")`
+returns 41 `WeightRenaming` entries that map upstream-internal naming to
+HF naming (`attn.` → `self_attn.`, `ffn.` → `mlp.`, `attn_norm.` →
+`input_layernorm.`, `attn.wq_a.` → `self_attn.q_a_proj.`, etc.). Entries
+6–38 are anchored at `^layers\.(\d+)\.` — they only fire on main-layer
+keys. The 6 model-level entries (`embed.`, `head.`, `norm.`, `hc_head_*`)
+don't apply to MTP either.
+
+**Result:** MTP keys arrive in upstream form (`mtp.0.attn.wq_a.weight`)
+after `from_pretrained` finishes the file-read, then fail to match the
+HF-named submodules in `model.mtp[0]` (which expect
+`mtp.0.self_attn.q_a_proj.weight`). The keys remain "unexpected", the
+submodules remain "uninitialized", and `_init_weights` runs again →
+silent random-init.
+
+**Workaround:** at runtime, programmatically clone all 33 main-layer
+entries to `mtp.\d+.*` equivalents and re-register the combined mapping:
+
+```python
+from transformers.conversion_mapping import (
+    get_checkpoint_conversion_mapping,
+    register_checkpoint_conversion_mapping,
+)
+existing = get_checkpoint_conversion_mapping("deepseek_v4")
+added = []
+for entry in existing:
+    sp = getattr(entry, "source_patterns", None)
+    tp = getattr(entry, "target_patterns", None)
+    if sp is None or tp is None:
+        continue
+    sp_list = sp if isinstance(sp, (list, tuple)) else [sp]
+    tp_list = tp if isinstance(tp, (list, tuple)) else [tp]
+    new_sp, new_tp = [], []
+    for s, t in zip(sp_list, tp_list):
+        if isinstance(s, str) and s.startswith(r"^layers\.(\d+)\."):
+            new_sp.append(s.replace(r"^layers\.(\d+)\.", r"^mtp\.(\d+)\.", 1))
+            new_tp.append(t.replace("layers.\\1.", "mtp.\\1.", 1))
+    if new_sp:
+        added.append(type(entry)(
+            source_patterns=new_sp if len(new_sp) > 1 else new_sp[0],
+            target_patterns=new_tp if len(new_tp) > 1 else new_tp[0],
+        ))
+register_checkpoint_conversion_mapping(
+    "deepseek_v4", list(existing) + added, overwrite=True)
+```
+
+**Upstream fix:** transformers itself should add the `mtp.\d+.*`
+equivalents in the canonical list. The patch is N+33 entries (mirroring
+33 of the original 41); the `embed`, `head`, `norm`, `hc_head_*` entries
+do *not* mirror because those are model-level and MTP doesn't have its
+own copy of them.
+
+**For the B300 NVFP4 sibling:** if your shim relies on the built-in
+conversion mapping, the MTP keys won't rename. Same silent random-init.
+Apply the mirror extension before any `from_pretrained` call.
+
+### How to detect both bugs in 50 ms — value-verification assertion
+
+The MISSING-keys count is necessary but not sufficient — even a fully
+correct module count can hide silent random-init if the wrong layer_type
+or missing conversion_mapping causes some submodules to be ignored
+during the load. Permanent assertion to catch this regression class:
+
+```python
+# Immediately after AutoModelForCausalLM.from_pretrained(...):
+if dist.get_rank() == 0:
+    import safetensors.torch as st
+    from pathlib import Path
+    loaded_w = model.mtp[0].self_attn.q_a_proj.weight
+    source_w = None
+    for shard in sorted(Path(args.input).glob("model-*.safetensors")):
+        with st.safe_open(shard, framework="pt") as f:
+            if "mtp.0.attn.wq_a.weight" in f.keys():
+                source_w = f.get_tensor("mtp.0.attn.wq_a.weight")
+                break
+    assert source_w is not None, "could not find mtp.0.attn.wq_a.weight in source"
+    diff = (loaded_w.cpu().float() - source_w.cpu().float()).abs().max().item()
+    assert diff < 1e-4, f"MTP weight mismatch! diff={diff}"
+    print(f"[mtp-verify] max_diff: {diff:.2e}  -> MTP weights loaded correctly")
+```
+
+Cost: ~50 ms per launch. Benefit: catches the entire class of
+silent-MTP-loading bugs (wrong layer_type, missing conversion entries,
+dtype mismatch, sliced load). Required permanent fixture in any
+DSv4 MTP-preserving calibration script.
+
+---
+
+## Mini-smoke result (2026-05-20, post-run, Option A path — superseded)
 
 Setup: `--samples 8 --batch-size 1 --max-seq-len 128 --dry-run-one-layer`
 (restricts recipe to layer 5 only). 8 ranks, p5en.48xlarge H200.
