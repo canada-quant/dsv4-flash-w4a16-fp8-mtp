@@ -361,7 +361,23 @@ def apply_gptq_reduce_hessian_patch(world_size: int, verbose: bool = True) -> No
                   flush=True)
 
         # Delegate replicated modules to the original implementation
-        return _orig(self, replicated_modules, module_to_rank)
+        result = _orig(self, replicated_modules, module_to_rank)
+
+        # CRITICAL: drain CUDA + NCCL streams before compress_module_list
+        # starts reading `num_samples` via .item(). Without this, the next
+        # call to `int(self._num_samples[module])` in compress_module_list
+        # line 304 blocks at cudaStreamSynchronize forever — the NCCL
+        # reduce kernel runs on a different stream than the default, and
+        # llmcompressor's `wait_for_comms` doesn't register a CUDA event
+        # on the default stream that the subsequent .item() can wait on.
+        # See py-spy backtrace in FINDINGS_FOR_SIBLING.md and upstream
+        # issue (filed alongside this patch).
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        dist.barrier()
+        if dist.get_rank() == 0:
+            print(f"[patch B] post-reduce sync barrier passed", flush=True)
+        return result
 
     _gptq.GPTQModifier._reduce_hessian_to_target_rank = _patched_reduce_hessian
 

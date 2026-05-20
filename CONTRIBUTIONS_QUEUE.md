@@ -18,6 +18,20 @@ maintainers comment on direction before the PR lands.
 
 ## Active candidates
 
+### C6 🔴 — `GPTQModifier` compress_module_list line 304 synchronous device→host stall
+
+- **Upstream:** `vllm-project/llm-compressor`
+- **Issue:** https://github.com/vllm-project/llm-compressor/issues/2736
+  (filed 2026-05-20)
+- **Discovered while** working on C1's patches — after C1's `_reduce_hessian_to_target_rank` skip-sharded patch landed,
+  the smoke hung at `int(num_samples)` (line 304 of `gptq/base.py`) — `Tensor.item<>` on a CUDA scalar triggers
+  cudaStreamSynchronize that never drains.
+- **Workaround:** add `torch.cuda.synchronize() + dist.barrier()` at the end of `_reduce_hessian_to_target_rank` (in our `scripts/multirank_patches.py`).
+- **Upstream fix candidate:** coerce `num_samples` to host once: `int(num_samples.detach().cpu().item()) if num_samples.is_cuda else int(num_samples)`. Saves >30000 sync points per DSv4 calibration run.
+- **Tag:** `@kylesayrs`
+- **Related:** #2734 (parent disjoint-set hang), #2735 (MTP drop)
+- **Empirical status:** workaround landed in our smoke, retest in progress at time of filing this entry.
+
 ### C1 🔴 — `GPTQModifier` hangs on multi-rank with sharded MoE experts
 
 - **Upstream:** `vllm-project/llm-compressor`
