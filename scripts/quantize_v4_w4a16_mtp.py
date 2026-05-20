@@ -102,28 +102,49 @@ def preprocess_v4(example: dict) -> dict:
 # PreTrainedModel bridge — option A
 # =========================================================================
 class _GPTQCompatibleConfig:
-    """Minimal config object satisfying the attrs llmcompressor.oneshot reads.
+    """Config object satisfying llmcompressor.oneshot's attribute reads AND
+    producing a vLLM-loadable ``config.json`` at save time.
 
-    Why not a real PretrainedConfig: PretrainedConfig.__init__ pulls in HF
-    auto-mapping logic that doesn't gracefully accept our deepseek_v4_shim
-    model_type. Duck-type the fields oneshot reads instead.
+    Why not a real ``PretrainedConfig``: ``PretrainedConfig.__init__`` pulls
+    in HF auto-mapping that doesn't gracefully accept our shim model_type.
+    Duck-type the fields oneshot reads instead.
+
+    Why bind ``upstream_config_path``: the previous save path wrote a
+    minimal config (just the ~7 fields stored on the instance), so vLLM
+    rejected it with ``Unrecognized model ... Should have a 'model_type'
+    key``. The fix: read the bf16-mtp config.json at save time and use it
+    as the base, then merge our overrides + ``quantization_config`` on
+    top. The bf16-mtp config is the source of truth for everything except
+    quantization.
     """
-    model_type = "deepseek_v4_shim"
     base_model_prefix = "model"
     is_encoder_decoder = False
 
-    def __init__(self, args):
+    def __init__(self, args, upstream_config_path: str | None = None):
+        # model_type is "deepseek_v4" so vLLM's DeepseekV4ForCausalLM model
+        # registry recognises it. (Previous value "deepseek_v4_shim" was a
+        # sentinel that never made it to the saved file.)
+        self.model_type = "deepseek_v4"
         self.tie_word_embeddings = True   # MTP shares embed/head with main
         self.hidden_size = args.dim
         self.num_hidden_layers = args.n_layers + args.n_mtp_layers
         self.vocab_size = args.vocab_size
         self.architectures = ["DeepseekV4ForCausalLM"]
-        # Required by some HF utilities — set sentinel values
         self.torch_dtype = "bfloat16"
-        self.use_return_dict = True
-        self.output_hidden_states = False
-        self.output_attentions = False
-        # quantization_config gets written by llmcompressor on save
+        # NB: do not set use_return_dict / output_hidden_states /
+        # output_attentions — vLLM's DeepseekV4Config exposes these as
+        # read-only properties (transformers raises AttributeError on
+        # setattr). llmcompressor reads ``config.use_return_dict``; we
+        # provide it via a property below.
+        # Path to the BF16 source config; save_pretrained reads it as the
+        # base for output config.json.
+        self._upstream_config_path = upstream_config_path
+
+    # Provide use_return_dict to llmcompressor at runtime, but DON'T put it
+    # in __dict__ so save_pretrained doesn't serialize it.
+    @property
+    def use_return_dict(self):
+        return True
 
     def to_dict(self):
         return {
@@ -132,9 +153,33 @@ class _GPTQCompatibleConfig:
         }
 
     def save_pretrained(self, save_directory, **_kw):
-        cfg = self.to_dict()
+        # Build full config = (bf16-mtp config) ∪ (our overrides). vLLM
+        # needs the full HF DeepseekV4 field set; the BF16 source has it.
+        base: dict = {}
+        upstream_dir = None
+        if self._upstream_config_path and os.path.exists(self._upstream_config_path):
+            with open(self._upstream_config_path) as f:
+                base = json.load(f)
+            upstream_dir = os.path.dirname(self._upstream_config_path)
+        # Don't carry the source's quantization_config (if any) — llm-
+        # compressor writes the new one separately.
+        base.pop("quantization_config", None)
+        # Our overrides win for the keys we explicitly set; the base
+        # provides the long-tail (rope_scaling, MoE/index/HC fields, etc.).
+        merged = {**base, **self.to_dict()}
         with open(os.path.join(save_directory, "config.json"), "w") as f:
-            json.dump(cfg, f, indent=2, default=str)
+            json.dump(merged, f, indent=2, default=str)
+        # Copy tokenizer files alongside the model so vLLM can boot the
+        # tokenizer at serve time. Without these, ``Couldn't instantiate
+        # the backend tokenizer'' on serve startup.
+        if upstream_dir:
+            import shutil
+            for fname in ("tokenizer.json", "tokenizer_config.json",
+                          "special_tokens_map.json", "generation_config.json",
+                          "chat_template.jinja"):
+                src = os.path.join(upstream_dir, fname)
+                if os.path.exists(src):
+                    shutil.copy2(src, os.path.join(save_directory, fname))
 
 
 class _GPTQCompatibleModel(nn.Module):
@@ -145,10 +190,11 @@ class _GPTQCompatibleModel(nn.Module):
     only need (forward returning .logits) + (config) + (save_pretrained).
     """
 
-    def __init__(self, calibration_model: CalibrationModel, args):
+    def __init__(self, calibration_model: CalibrationModel, args,
+                 upstream_config_path: str | None = None):
         super().__init__()
         self.cal_model = calibration_model
-        self.config = _GPTQCompatibleConfig(args)
+        self.config = _GPTQCompatibleConfig(args, upstream_config_path)
         # llmcompressor's save path calls update_and_save_recipe(model.name_or_path, ...)
         # to copy or update a recipe.yaml. We never had a name_or_path; pass an
         # empty string so the recipe write goes to save_directory only.
@@ -240,14 +286,24 @@ def build_gptq_recipe(dry_run_one_layer: bool):
     else:
         attn_targets = [
             r"re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$",
-            r"re:mtp\.\d+\.(e_proj|h_proj)$",
+            r"re:.*mtp\.\d+\.(e_proj|h_proj)$",
         ]
         expert_targets = [r"re:.*\.ffn\.experts\.\d+\.(w1|w2|w3)$"]
 
+    # Set per-group ``format=`` so the compressor packs/encodes weights
+    # correctly at save time. Without this, scheme.format defaults to
+    # "dense" and vLLM's compressed-tensors loader raises
+    # NotImplementedError: No compressed-tensors compatible scheme was
+    # found.  pack-quantized = bit-packed W4A16; float-quantized = FP8 with
+    # block scales.
     return GPTQModifier(
         config_groups={
-            "attention": QuantizationScheme(targets=attn_targets, **FP8_BLOCK),
-            "experts": QuantizationScheme(targets=expert_targets, **W4A16),
+            "attention": QuantizationScheme(
+                targets=attn_targets, format="float-quantized", **FP8_BLOCK
+            ),
+            "experts": QuantizationScheme(
+                targets=expert_targets, format="pack-quantized", **W4A16
+            ),
         },
         ignore=[
             "head", "embed",
@@ -389,8 +445,29 @@ def main():
 
     if is_main:
         print("[load] instantiating Transformer on CPU (init-skip)", flush=True)
+    # Transformer.__init__ (vendor/dsv4-upstream/model.py line 773) does
+    # ``global world_size; world_size = dist.get_world_size() ...`` which
+    # overrides the shim's WS=1 force every time. Mask dist temporarily
+    # during construction so the global stays at 1.
+    import dsv4_upstream_model as _ds
+    _orig_is_init = dist.is_initialized
+    _orig_get_ws = dist.get_world_size
+    _orig_get_rk = dist.get_rank
+    dist.is_initialized = lambda: False
+    dist.get_world_size = lambda *a, **kw: 1
+    dist.get_rank = lambda *a, **kw: 0
     t0 = time.time()
-    transformer = Transformer(margs)
+    try:
+        transformer = Transformer(margs)
+    finally:
+        dist.is_initialized = _orig_is_init
+        dist.get_world_size = _orig_get_ws
+        dist.get_rank = _orig_get_rk
+        _ds.world_size = 1
+        _ds.rank = 0
+    if is_main:
+        print(f"[load] upstream _module.world_size={_ds.world_size} rank={_ds.rank} (post-init)",
+              flush=True)
     if is_main:
         print(f"[load] instantiated in {time.time()-t0:.1f}s", flush=True)
 
@@ -433,7 +510,7 @@ def main():
 
     # ---- 5. wrap model ---------------------------------------------------
     cal = CalibrationModel(transformer)
-    model = _GPTQCompatibleModel(cal, margs)
+    model = _GPTQCompatibleModel(cal, margs, upstream_config_path=args.config)
 
     print("[step6] entering topk patch block", flush=True)
     # ---- 6. patch topk_idxs for device matching --------------------------

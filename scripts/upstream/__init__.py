@@ -124,22 +124,34 @@ _module.rank = 0
 
 
 def apply_dist_state() -> tuple[int, int]:
-    """Mirror torch.distributed state into the vendored module's globals.
+    """Force the vendored module's ``world_size`` to 1 so every rank holds the
+    full (unsharded) model.
 
-    The upstream ``Transformer.__init__`` reads module-level ``world_size`` /
-    ``rank`` once. Calibration on 8x B300 via
-    ``torchrun --nproc-per-node 8 ... && compressed_tensors.distributed.init_dist()``
-    sets dist, but our shim was imported BEFORE that. Call this after
-    init_dist() and before instantiating Transformer.
+    Upstream's ParallelEmbedding / ColumnParallelLinear / RowParallelLinear /
+    MoE-expert-sharding logic reads module-level ``world_size`` at module
+    construction time and shards across ranks. With ``GPTQLinear``-rebound
+    Linear (which doesn't implement TP-aware reduction), running with
+    ``world_size > 1`` produces shape-mismatched modules — e.g. the
+    checkpoint's ``embed.weight`` is ``[129280, 4096]`` but a rank with
+    ``world_size=8`` constructs ``[16160, 4096]``.
 
-    Returns the (world_size, rank) tuple actually set.
+    Data-parallel calibration still works correctly: each rank holds the
+    same full model, the DataLoader's DistributedSampler partitions the
+    768 samples 96-per-rank, and llm-compressor's
+    ``compress_module_list`` all-reduces per-Linear Hessians across ranks
+    before the GPTQ solve. So with this override the topology becomes:
+
+      * 8 processes (torchrun --nproc-per-node 8)
+      * each holds the full ~568 GB model on CPU (mmap'd safetensors are
+        shared across processes via OS page cache)
+      * compress sees 768 effective samples (96 × 8 ranks)
+      * Hessian all-reduce keeps the per-Linear solve identical to
+        single-rank with all 768 samples
+
+    Returns the (world_size, rank) tuple actually set in the shim.
     """
-    if dist.is_available() and dist.is_initialized():
-        _module.world_size = dist.get_world_size()
-        _module.rank = dist.get_rank()
-    else:
-        _module.world_size = 1
-        _module.rank = 0
+    _module.world_size = 1
+    _module.rank = 0
     return _module.world_size, _module.rank
 
 
