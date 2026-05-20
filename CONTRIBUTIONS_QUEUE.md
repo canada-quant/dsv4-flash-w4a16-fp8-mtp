@@ -18,6 +18,39 @@ maintainers comment on direction before the PR lands.
 
 ## Active candidates
 
+### C7 ⏳ — `huggingface/transformers`: add `DeepseekV4NextNPredictor` class (MTP support)
+
+- **Upstream:** `huggingface/transformers`
+- **Files in our repo:** `patches/transformers_dsv4_mtp.py.diff` (the PR diff),
+  `scripts/transformers_mtp_shim.py` (runtime equivalent for our internal use),
+  `patches/UPSTREAM_PR_DRAFTS.md` (PR plan)
+- **Severity:** without this class, `from_pretrained` either drops MTP keys
+  (current behavior) or loads them with no submodule to attach to (after our
+  hunk 1 of modeling_deepseek_v4.py.diff). Either way, downstream calibration
+  can't see the MTP block.
+- **Empirical verification:** runtime shim instantiates correctly with real
+  DSv4-Flash config — 6.63B params per MTP block, all expected children
+  (`e_proj`, `h_proj`, `enorm`, `hnorm`, `norm`, `self_attn`, `mlp`, etc.)
+  present in `named_modules()`, 3 `hc_head_*` params registered.
+- **Open work for PR:** implement `.forward()` for inference-time draft
+  (shim omits — calibration only needs the weights to land), tests, MoE
+  forward wiring. See `patches/UPSTREAM_PR_DRAFTS.md` § P1.
+- **Filing order:** file first; P2 (llm-compressor mapping extension) depends on this.
+
+### C8 ⏳ — `vllm-project/llm-compressor`: extend ARCH_TO_2D_MAPPINGS for MTP
+
+- **Upstream:** `vllm-project/llm-compressor`
+- **Files in our repo:** `patches/llmc_dsv4_mtp_conversion_mappings.diff`,
+  `patches/UPSTREAM_PR_DRAFTS.md`
+- **Severity:** depends on C7 landing first. Once `DeepseekV4NextNPredictor`
+  exists in transformers, the existing regex anchor `^layers\.` still
+  excludes `mtp.*` paths from linearize_moe's walk. 3 additional
+  WeightRenaming entries cover `mtp.\d+.mlp.experts.{0..255}.{w1,w2,w3}`.
+- **Open work for PR:** acceptance test — load + save round-trip via
+  `load_quantizable_moe()` on DSv4-Flash MTP-preserved checkpoint, assert
+  `mtp.0.mlp.experts.*` keys present in output safetensors index.
+- **Related:** #2735 (the issue body for these patches).
+
 ### C6 🔴 — `GPTQModifier` compress_module_list line 304 synchronous device→host stall
 
 - **Upstream:** `vllm-project/llm-compressor`

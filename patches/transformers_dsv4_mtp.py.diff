@@ -1,0 +1,110 @@
+--- a/transformers/models/deepseek_v4/modeling_deepseek_v4.py
++++ b/transformers/models/deepseek_v4/modeling_deepseek_v4.py
+@@ -1142,6 +1142,75 @@ class DeepseekV4DecoderLayer(GradientCheckpointingLayer):
+         )
+
+
++class DeepseekV4NextNPredictor(DeepseekV4DecoderLayer):
++    r"""DSv4 Multi-Token-Prediction (MTP) draft-head block.
++
++    Structurally a :class:`DeepseekV4DecoderLayer` (full attention + MoE +
++    hyper-connection plumbing) plus four MTP-specific projections that
++    blend the previous draft hidden state ``h`` with the next-token
++    embedding ``e`` before the block forward:
++
++        e = self.enorm(self.embed_tokens(next_token_ids))
++        h = self.hnorm(h)
++        x = self.e_proj(e).unsqueeze(2) + self.h_proj(h)
++        x = super().forward(x, ...)         # main DecoderLayer body
++        logits = shared_head(x)             # tied LM head from main model
++
++    Plus its own ``hc_head_*`` parameters for the final HyperHead
++    projection. See paper §3 (Multi-Token Prediction) and the upstream
++    reference at ``DeepSeek-V4-Flash/inference/model.py:MTPBlock``.
++
++    This class is instantiated by :class:`DeepseekV4Model` when
++    ``config.num_nextn_predict_layers > 0``. Prior to its introduction,
++    ``DeepseekV4PreTrainedModel`` carried
++    ``_keys_to_ignore_on_load_unexpected = [r"(^|\.)mtp\..*"]`` which
++    silently dropped every ``mtp.*`` weight on ``from_pretrained`` — see
++    https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp for the
++    upstream-PR-candidacy discussion.
++    """
++
++    def __init__(self, config: "DeepseekV4Config", layer_idx: int):
++        # layer_idx for the MTP block conventionally continues past
++        # num_hidden_layers; e.g. for V4-Flash main layers are 0..42 and
++        # the MTP block is layer 43.
++        super().__init__(config, layer_idx)
++        self.e_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
++        self.h_proj = nn.Linear(config.hidden_size, config.hidden_size, bias=False)
++        self.enorm = DeepseekV4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
++        self.hnorm = DeepseekV4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
++        # `norm` is the final pre-head norm specific to this MTP block;
++        # distinct from the model-level `norm` shared by main layers.
++        self.norm = DeepseekV4RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
++        hc_mult = config.hc_mult
++        hc_dim = hc_mult * config.hidden_size
++        # MTP HyperHead parameters (separate from the main model's
++        # `DeepseekV4HyperHead`; this block carries its own head mix).
++        self.hc_head_fn = nn.Parameter(torch.empty(hc_mult, hc_dim, dtype=torch.float32))
++        self.hc_head_base = nn.Parameter(torch.empty(hc_mult, dtype=torch.float32))
++        self.hc_head_scale = nn.Parameter(torch.empty(1, dtype=torch.float32))
++
++    def forward(
++        self,
++        hidden_states: torch.Tensor,
++        next_token_ids: torch.LongTensor,
++        embed_tokens: nn.Embedding,
++        shared_head: nn.Module,
++        **kwargs: Unpack[TransformersKwargs],
++    ) -> torch.Tensor:
++        r"""Forward for inference-time MTP draft. During calibration, the
++        block is exercised as a normal :class:`DeepseekV4DecoderLayer`
++        (its weights are calibrated alongside the main layers); the
++        MTP-specific input composition only fires when used as a draft
++        head."""
++        # Compose next-token embedding with current hidden state.
++        e = self.enorm(embed_tokens(next_token_ids))
++        h = self.hnorm(hidden_states)
++        # Broadcast across the hyper-connection axis (B, S, 1, D) so the
++        # add lines up with `hidden_states` shape (B, S, hc_mult, D).
++        x = self.e_proj(e).unsqueeze(2) + self.h_proj(h).unsqueeze(2)
++        x = super().forward(x, **kwargs)
++        return shared_head(self.norm(x), self.hc_head_fn, self.hc_head_scale, self.hc_head_base)
++
++
+ @auto_docstring
+ class DeepseekV4PreTrainedModel(PreTrainedModel):
+     base_model_prefix = "model"
+@@ -1193,7 +1262,16 @@ class DeepseekV4PreTrainedModel(PreTrainedModel):
+     # PATCH (paul/dsv4 mtp-retention): the upstream regex tells from_pretrained
+     # to *silently drop* every mtp.* key. We need them preserved for the W4A16-FP8
+     # + MTP calibration. Setting to [] keeps the architecture without dropping keys.
+-    _keys_to_ignore_on_load_unexpected = []
++    # Once `DeepseekV4NextNPredictor` is instantiated by `DeepseekV4Model` for
++    # `num_nextn_predict_layers > 0`, the `mtp.*` keys map to real submodules
++    # and the silent-drop regex is no longer needed at all. Left empty defensively
++    # so any future architectural extensions (e.g. additional draft heads beyond
++    # `num_nextn_predict_layers`) surface as warnings rather than silent drops.
++    _keys_to_ignore_on_load_unexpected = []  # was: [r"(^|\.)mtp\..*"]
+     # ``_is_stateful`` opts out of generation modes that need to roll the cache
+     # back across drafts (assisted generation, prompt lookup, contrastive search).
+     # The compressor's running-window state isn't rewindable, so `generate`
+@@ -1255,6 +1333,16 @@ class DeepseekV4Model(DeepseekV4PreTrainedModel):
+         self.gradient_checkpointing = False
+         self.hc_head = DeepseekV4HyperHead(config)
+
++        # Multi-Token-Prediction (MTP) draft heads. Each MTP block predicts one
++        # additional token beyond the main model's output, enabling vLLM
++        # `--speculative-config '{"method":"mtp","num_speculative_tokens":N}'`.
++        # DSv4-Flash ships with ``num_nextn_predict_layers = 1``.
++        self.mtp = nn.ModuleList(
++            [
++                DeepseekV4NextNPredictor(config, config.num_hidden_layers + i)
++                for i in range(getattr(config, "num_nextn_predict_layers", 0))
++            ]
++        )
++
+         # Initialize weights and apply final processing
+         self.post_init()

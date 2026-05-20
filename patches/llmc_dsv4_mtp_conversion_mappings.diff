@@ -1,0 +1,43 @@
+--- a/src/llmcompressor/modeling/moe/conversion_mappings.py
++++ b/src/llmcompressor/modeling/moe/conversion_mappings.py
+@@ -16,6 +16,7 @@ from transformers.models.deepseek_v4.modeling_deepseek_v4 import DeepseekV4Exper
+ ARCH_TO_EXPERTS_MODULE_CLS = {"deepseek_v4": DeepseekV4Experts}
+
+ ARCH_TO_2D_MAPPINGS = {
+     "deepseek_v4": (
+         ["mlp.experts.gate_up_proj", "mlp.experts.down_proj"],
+         [
++            # ---- Main decoder layers: layers.<L>.mlp.experts.<E>.{w1,w2,w3} ----
+             WeightRenaming(
+                 source_patterns=r"^layers\.(\d+)\.mlp\.experts\.(\d+)\.w1\.",
+                 target_patterns=r"layers.\1.mlp.experts.\2.gate_proj.",
+@@ -28,6 +29,28 @@ ARCH_TO_2D_MAPPINGS = {
+                 source_patterns=r"^layers\.(\d+)\.mlp\.experts\.(\d+)\.w3\.",
+                 target_patterns=r"layers.\1.mlp.experts.\2.up_proj.",
+             ),
++            # ---- MTP (Multi-Token-Prediction) draft block: mtp.<M>.mlp.experts.<E>.{w1,w2,w3} ----
++            # Required for any DSv4 quantization that preserves the MTP layer
++            # (e.g. for vLLM `--speculative-config method=mtp num_speculative_tokens=N`).
++            # The MTP block has identical MoE structure to a main DecoderLayer
++            # but lives under a distinct `mtp.<M>.` prefix instead of `layers.<L>.`.
++            # Without these mappings, `linearize_moe` walks `named_modules()` for
++            # `FusedExpertsProtocol` but the regex anchor `^layers\.` excludes
++            # `mtp.<M>.mlp.experts.*` paths — so MTP's MoE block silently skips
++            # linearization and ships uncalibrated. See
++            # https://github.com/vllm-project/llm-compressor/issues/2735 for the
++            # diagnostic write-up.
++            WeightRenaming(
++                source_patterns=r"^mtp\.(\d+)\.mlp\.experts\.(\d+)\.w1\.",
++                target_patterns=r"mtp.\1.mlp.experts.\2.gate_proj.",
++            ),
++            WeightRenaming(
++                source_patterns=r"^mtp\.(\d+)\.mlp\.experts\.(\d+)\.w2\.",
++                target_patterns=r"mtp.\1.mlp.experts.\2.down_proj.",
++            ),
++            WeightRenaming(
++                source_patterns=r"^mtp\.(\d+)\.mlp\.experts\.(\d+)\.w3\.",
++                target_patterns=r"mtp.\1.mlp.experts.\2.up_proj.",
++            ),
+         ],
+     )
+ }
