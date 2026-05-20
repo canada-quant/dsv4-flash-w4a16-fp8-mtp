@@ -74,7 +74,28 @@ maintainers comment on direction before the PR lands.
   RECOVERY.md doc in this repo IS the public artifact. Anyone hitting
   the same Error 802 on the same AMI will find this via search.
 
-### C4 ⏳ — `huggingface_hub` deprecation warning: `HF_HUB_ENABLE_HF_TRANSFER`
+### C4 🔴 — DSv4 canonical example drops MTP layer (`load_quantizable_moe`)
+
+- **Upstream:** `vllm-project/llm-compressor`
+- **Issue:** https://github.com/vllm-project/llm-compressor/issues/2735
+  (filed 2026-05-20)
+- **Files referenced:** `patches/modeling_deepseek_v4.py.diff` (our MTP
+  retention patch), `src/llmcompressor/modeling/moe/conversion_mappings.py`
+  (the `^layers\.` regex that excludes `mtp.*` paths)
+- **Severity:** anyone calibrating DSv4 via `load_quantizable_moe()`
+  (current canonical recipe in `kylesayrs/transformers-v5` HEAD,
+  commit `8c533c21f` from 2026-05-20) ships an artifact without MTP.
+  Same root cause as predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8`.
+- **Tag:** `@kylesayrs` (mentioned in issue body; this is the active
+  iteration branch for DSv4)
+- **Proposed PR:** add `DeepseekV4MTP` module class to `transformers`,
+  extend `ARCH_TO_2D_MAPPINGS["deepseek_v4"]` to cover `mtp.\d+.mlp.experts.*`,
+  update example to verify MTP keys post-save_pretrained.
+- **Brand-building angle:** filed during the week kylesayrs is iterating
+  on the DSv4 fallback pathway — canada-quant contributing the MTP angle
+  during active upstream development.
+
+### C5 ⏳ — `huggingface_hub` deprecation warning: `HF_HUB_ENABLE_HF_TRANSFER`
 
 - **Upstream:** `huggingface/huggingface_hub`
 - **Observed:** during `hf download` on H200 box 2026-05-20.
