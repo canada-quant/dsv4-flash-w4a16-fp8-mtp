@@ -18,19 +18,19 @@ maintainers comment on direction before the PR lands.
 
 ## Active candidates
 
-### C1 ⏳ — `GPTQModifier` hangs on multi-rank with sharded MoE experts
+### C1 🔴 — `GPTQModifier` hangs on multi-rank with sharded MoE experts
 
 - **Upstream:** `vllm-project/llm-compressor`
+- **Issue:** https://github.com/vllm-project/llm-compressor/issues/2734
+  (filed 2026-05-20)
 - **Files in our repo:** `scripts/multirank_patches.py` (the monkey-patches),
   `scripts/quantize_v4_w4a16_mtp.py` (integration)
 - **Severity:** blocks any GPTQ run on a model with module-set divergence
   across ranks (decoupled MoE expert sharding being the canonical case).
-- **Verification status:** mini-GPTQ smoke not yet run — will confirm or
-  refute before filing.
-- **Title (draft):** `[bug] GPTQModifier hangs on multi-rank with decoupled
-  expert sharding (dist.reduce/broadcast on disjoint module sets)`
-- **Tag:** `@kylesayrs` (known to canada-quant from vLLM #41511 / kylesayrs
-  PR #41276)
+- **Empirical confirmation:** mini-GPTQ smoke on 8× H200 reached subgraph
+  6/45 cleanly with patches active; `[patch B] skipped reduce for 48
+  sharded modules; reducing 4 replicated` confirms the filter fires.
+- **Tag:** `@kylesayrs` (mentioned in issue body)
 - **Proposed PR:** introduce a per-module "replication group" attribute on
   the quantization config so `_reduce_hessian_to_target_rank` and
   `_broadcast_quantized_params` can gate the collectives on it. Our
@@ -58,16 +58,21 @@ maintainers comment on direction before the PR lands.
 
 ### C3 ⏳ — AWS DLAMI `ami-0bae40837d7422a24` driver/fabricmanager mismatch
 
-- **Upstream:** `aws/deep-learning-amis` (GitHub) + AWS Support case
-- **Files in our repo:** `RECOVERY.md` section 1
+- **Upstream:** AWS doesn't host a public DLAMI issue tracker —
+  `awsdocs/aws-deep-learning-amis` is archived (2025-10). Practical
+  venue: AWS re:Post forum or an AWS Support case for the user's account.
+- **Files in our repo:** `RECOVERY.md` section 1 (full repro + fix +
+  rollback procedure)
 - **Severity:** CUDA Error 802 out of the box on HGX H200 instances (p5en).
   GPUs visible to `nvidia-smi` but `torch.cuda.is_available()` returns
   `False`. Multi-rank NCCL impossible until fixed.
 - **Title (draft):** `DLAMI ami-0bae40837d7422a24 ships driver 595.64 +
   fabricmanager-595 (595.71.05) — CUDA Error 802 on p5en out of the box`
-- **Repro:** see `RECOVERY.md` section 1. Includes the fix sequence.
 - **Workaround documented:** yes, `RECOVERY.md` walks the apt install +
   reboot path. ~10 min total.
+- **Brand-building angle:** since there's no upstream tracker, the
+  RECOVERY.md doc in this repo IS the public artifact. Anyone hitting
+  the same Error 802 on the same AMI will find this via search.
 
 ### C4 ⏳ — `huggingface_hub` deprecation warning: `HF_HUB_ENABLE_HF_TRANSFER`
 

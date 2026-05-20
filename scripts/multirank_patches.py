@@ -121,21 +121,32 @@ def assert_sharding_invariant(
     skipping reduces would silently corrupt the Hessian. Better to crash
     loudly here than discover at hour 7 of calibration.
     """
+    # named_modules() emits names without a leading dot at the top level
+    # (e.g. "layers.0.ffn.experts.0" not ".layers.0..."). Anchor with
+    # (?:^|\.) so the regex matches both top-level and nested paths (which
+    # is what we get when the model is wrapped in CalibrationModel and the
+    # names become e.g. "cal_model.transformer.layers.0.ffn.experts.0").
     local: List[Tuple[int, int]] = []
+    seen: set = set()
     for name, module in model.named_modules():
-        m = re.search(r"\.layers\.(\d+)\.ffn\.experts\.(\d+)\b", name)
+        m = re.search(r"(?:^|\.)layers\.(\d+)\.ffn\.experts\.(\d+)\b", name)
         if m:
             layer_id = int(m.group(1))
             expert_id = int(m.group(2))
-            if (layer_id, expert_id) not in local:
+            if (layer_id, expert_id) not in seen:
+                seen.add((layer_id, expert_id))
                 local.append((layer_id, expert_id))
-        m = re.search(r"\.mtp\.(\d+)\.ffn\.experts\.(\d+)\b", name)
+            continue
+        m = re.search(r"(?:^|\.)mtp\.(\d+)\.ffn\.experts\.(\d+)\b", name)
         if m:
             mtp_id = int(m.group(1))
             expert_id = int(m.group(2))
             # encode MTP layer as a negative-offset layer id to keep the
             # (layer, expert) tuple flat
-            local.append((-(mtp_id + 1), expert_id))
+            key = (-(mtp_id + 1), expert_id)
+            if key not in seen:
+                seen.add(key)
+                local.append(key)
 
     if not dist.is_initialized() or world_size == 1:
         if verbose and rank == 0:
@@ -190,10 +201,11 @@ def assert_sharding_invariant(
               f"{incomplete[:5]}", flush=True)
 
     if verbose:
-        n_layers = len(layer_to_experts)
+        n_main = sum(1 for k in layer_to_experts if k >= 0)
+        n_mtp = sum(1 for k in layer_to_experts if k < 0)
         per_rank = [len(g or []) for g in gathered]
-        print(f"[shard-invariant] OK — {n_layers} MoE layers, "
-              f"{sum(per_rank)} total (layer,expert) tuples, "
+        print(f"[shard-invariant] OK — {n_main} main MoE layers + {n_mtp} MTP "
+              f"layer(s), {sum(per_rank)} total (layer,expert) tuples, "
               f"disjoint across {world_size} ranks "
               f"(per-rank counts: {per_rank})", flush=True)
 
