@@ -175,13 +175,41 @@ def build_model_args(
     with open(upstream_config_path) as f:
         cfg: dict[str, Any] = json.load(f)
 
-    # Upstream config has fields that aren't ModelArgs members (e.g.,
-    # `expert_dtype` in the config is honoured at construction time; we
-    # force bf16 here). Filter to known ModelArgs fields.
-    import dataclasses
+    # The bf16-mtp config.json was produced by HF transformers and uses HF
+    # field names; upstream ModelArgs uses its own. Map HF -> upstream where
+    # the keys differ. Same-named fields fall through via the filter below.
+    hf_to_upstream = {
+        "hidden_size": "dim",
+        "num_hidden_layers": "n_layers",
+        "num_hash_layers": "n_hash_layers",
+        "num_nextn_predict_layers": "n_mtp_layers",
+        "num_attention_heads": "n_heads",
+        "num_experts_per_tok": "n_activated_experts",
+        "moe_intermediate_size": "moe_inter_dim",
+        "scoring_func": "score_func",
+        "routed_scaling_factor": "route_scale",
+        "qk_rope_head_dim": "rope_head_dim",
+        "rms_norm_eps": "norm_eps",
+        "max_position_embeddings": "original_seq_len",
+    }
+    mapped: dict[str, Any] = {}
+    for k, v in cfg.items():
+        mapped[hf_to_upstream.get(k, k)] = v
+    # rope_scaling subtree -> rope_factor / beta_fast / beta_slow / original_seq_len
+    if isinstance(mapped.get("rope_scaling"), dict):
+        rs = mapped.pop("rope_scaling")
+        if "factor" in rs:
+            mapped["rope_factor"] = rs["factor"]
+        if "beta_fast" in rs:
+            mapped["beta_fast"] = rs["beta_fast"]
+        if "beta_slow" in rs:
+            mapped["beta_slow"] = rs["beta_slow"]
+        if "original_max_position_embeddings" in rs:
+            mapped["original_seq_len"] = rs["original_max_position_embeddings"]
 
+    import dataclasses
     arg_fields = {f.name for f in dataclasses.fields(ModelArgs)}
-    kwargs = {k: v for k, v in cfg.items() if k in arg_fields}
+    kwargs = {k: v for k, v in mapped.items() if k in arg_fields}
     kwargs["dtype"] = dtype  # force bf16
     kwargs.pop("expert_dtype", None)  # force routed experts bf16 (no FP4 path)
     kwargs.pop("scale_fmt", None)  # only relevant for FP8/FP4 paths

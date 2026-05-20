@@ -182,7 +182,7 @@ _dsv4_mod_for_patch.get_window_topk_idxs = _window_topk_to_dev
 _dsv4_mod_for_patch.get_compress_topk_idxs = _compress_topk_to_dev
 print("  patched get_*_topk_idxs to return device-matched indices", flush=True)
 
-cal_model = CalibrationModel(transformer)
+cal_model = CalibrationModel(transformer)  # noqa: F841
 
 # Per-target Hessian accumulators
 hess_state: dict[str, dict] = {}

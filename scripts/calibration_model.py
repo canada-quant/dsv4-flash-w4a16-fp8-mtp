@@ -35,13 +35,11 @@ import torch
 import torch.nn as nn
 
 
-class _LogitsOut:
-    """Minimal CausalLMOutput-shaped container for ``.logits`` access."""
-
-    __slots__ = ("logits",)
-
-    def __init__(self, logits: torch.Tensor):
-        self.logits = logits
+# _LogitsOut removed — torch.fx's create_arg (via llm-compressor's
+# SequentialTracer) raises NotImplementedError on any custom return type that
+# isn't a Tensor / list / dict / NamedTuple-the-tracer-recognises. The class
+# was wrapping logits for HF-style ``.logits`` access; calibration doesn't
+# need that. forward returns Tensor.
 
 
 class CalibrationModel(nn.Module):
@@ -57,7 +55,15 @@ class CalibrationModel(nn.Module):
         super().__init__()
         self.transformer = transformer
 
-    def forward(self, input_ids: torch.Tensor, **_unused) -> _LogitsOut:
+    def forward(self, input_ids: torch.Tensor, **_unused) -> torch.Tensor:
+        """Return the raw logits tensor — NOT a wrapped object.
+
+        llm-compressor's sequential calibrator runs fx symbolic tracing on
+        forward; arbitrary classes raise ``NotImplementedError`` from fx's
+        ``create_arg``. The Tensor return type is first-class fx-traceable.
+        Calibration uses the return value only as a trace-graph sink; it
+        doesn't read ``.logits``.
+        """
         t = self.transformer
 
         h = t.embed(input_ids)
@@ -75,5 +81,4 @@ class CalibrationModel(nn.Module):
         for mtp_layer in t.mtp:
             _ = mtp_layer(h, 0, input_ids)
 
-        logits = t.head(h, t.hc_head_fn, t.hc_head_scale, t.hc_head_base, t.norm)
-        return _LogitsOut(logits)
+        return t.head(h, t.hc_head_fn, t.hc_head_scale, t.hc_head_base, t.norm)

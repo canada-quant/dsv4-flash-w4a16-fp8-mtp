@@ -69,7 +69,7 @@ from scripts.upstream import (
     apply_dist_state,
     build_model_args,
 )
-from scripts.calibration_model import CalibrationModel, _LogitsOut
+from scripts.calibration_model import CalibrationModel
 from scripts.load_bf16_into_transformer import load_safetensors_into
 
 
@@ -149,6 +149,10 @@ class _GPTQCompatibleModel(nn.Module):
         super().__init__()
         self.cal_model = calibration_model
         self.config = _GPTQCompatibleConfig(args)
+        # llmcompressor's save path calls update_and_save_recipe(model.name_or_path, ...)
+        # to copy or update a recipe.yaml. We never had a name_or_path; pass an
+        # empty string so the recipe write goes to save_directory only.
+        self.name_or_path = ""
 
     @property
     def device(self) -> torch.device:
@@ -170,7 +174,7 @@ class _GPTQCompatibleModel(nn.Module):
         # embed/head sharing is wired in vendored Transformer.__init__.
         pass
 
-    def forward(self, input_ids: torch.Tensor, **kwargs) -> _LogitsOut:
+    def forward(self, input_ids: torch.Tensor, **kwargs) -> torch.Tensor:
         return self.cal_model(input_ids, **kwargs)
 
     def save_pretrained(self, save_directory, save_compressed: bool = True, **kw):
@@ -230,8 +234,9 @@ def build_gptq_recipe(dry_run_one_layer: bool):
 
     if dry_run_one_layer:
         # Restrict to a SINGLE layer's Linears so the dry-run finishes fast.
-        attn_targets = [r"re:layers\.5\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$"]
-        expert_targets = [r"re:layers\.5\.ffn\.experts\.\d+\.(w1|w2|w3)$"]
+        # `.*` prefix matches the wrapper path (cal_model.transformer.layers.5...).
+        attn_targets = [r"re:.*\.layers\.5\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$"]
+        expert_targets = [r"re:.*\.layers\.5\.ffn\.experts\.\d+\.(w1|w2|w3)$"]
     else:
         attn_targets = [
             r"re:.*\.attn\.(wq_a|wq_b|wkv|wo_a|wo_b)$",
@@ -325,11 +330,42 @@ def main():
 
     t_total = time.time()
 
+    # ---- 0. version-skew patch -----------------------------------------
+    # llm-compressor f2aa32e2 calls update_offload_parameter(..., source_rank=...)
+    # but compressed-tensors 0.15.1a20260515 signature is (module, name, data).
+    # Wrap the function to swallow source_rank when present so the GPTQ
+    # post-compress writeback succeeds.
+    import compressed_tensors.utils.offload as _cto
+    _orig_uop = _cto.update_offload_parameter
+    def _uop_compat(module, name, data, *, source_rank=None, **_kw):
+        return _orig_uop(module, name, data)
+    _cto.update_offload_parameter = _uop_compat
+    # llm-compressor caches by-name import at module load — re-bind there too.
+    import llmcompressor.modifiers.gptq.base as _gptq_base
+    if hasattr(_gptq_base, "update_offload_parameter"):
+        _gptq_base.update_offload_parameter = _uop_compat
+    print(f"[compat] update_offload_parameter wrapped to swallow source_rank kwarg",
+          flush=True)
+
     # ---- 1. distributed init ---------------------------------------------
     use_dist = "TORCHELASTIC_RUN_ID" in os.environ
     if use_dist:
         from compressed_tensors.distributed import init_dist
         init_dist()
+    elif not dist.is_initialized():
+        # llm-compressor's GPTQ compress_modules() calls dist.get_rank()
+        # unconditionally — even in single-process mode. Init a 1-rank
+        # gloo group via a unique tcp endpoint so it succeeds.
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            free_port = s.getsockname()[1]
+        dist.init_process_group(
+            backend="gloo",
+            init_method=f"tcp://127.0.0.1:{free_port}",
+            rank=0,
+            world_size=1,
+        )
     apply_dist_state()
     world_size = dist.get_world_size() if dist.is_initialized() else 1
     rank = dist.get_rank() if dist.is_initialized() else 0
@@ -399,25 +435,135 @@ def main():
     cal = CalibrationModel(transformer)
     model = _GPTQCompatibleModel(cal, margs)
 
+    print("[step6] entering topk patch block", flush=True)
     # ---- 6. patch topk_idxs for device matching --------------------------
-    # Same patch as the smoke harness — vendor's lru_cache'd topk fns
-    # return CPU tensors otherwise.
     import dsv4_upstream_model as _dsv4
+    print(f"[step6] imported _dsv4 = {_dsv4!r}", flush=True)
     _orig_win = _dsv4.get_window_topk_idxs
     _orig_cmp = _dsv4.get_compress_topk_idxs
 
+    # Clear lru_cache so any previously-cached cpu results are dropped — the
+    # next call will recompute and our wrapper will relocate.
+    if hasattr(_orig_win, "cache_clear"):
+        _orig_win.cache_clear()
+    if hasattr(_orig_cmp, "cache_clear"):
+        _orig_cmp.cache_clear()
+
+    def _current_cuda_device() -> torch.device:
+        if torch.cuda.is_available():
+            return torch.device(f"cuda:{torch.cuda.current_device()}")
+        return torch.device("cpu")
+
+    _win_call_count = [0]
+    _cmp_call_count = [0]
+
     def _win_dev(*a, **kw):
         r = _orig_win(*a, **kw)
-        # Move to the active default device (which the sequential calibrator
-        # sets to the GPU for the block currently being processed).
-        return r.to(torch.get_default_device()) if r.device != torch.get_default_device() else r
+        target = _current_cuda_device()
+        out = r.to(target) if r.device != target else r
+        _win_call_count[0] += 1
+        if _win_call_count[0] <= 3:
+            print(f"  [topk-patch] _win_dev call {_win_call_count[0]}: "
+                  f"target={target}, in.device={r.device}, out.device={out.device}",
+                  flush=True)
+        return out
 
     def _cmp_dev(*a, **kw):
         r = _orig_cmp(*a, **kw)
-        return r.to(torch.get_default_device()) if r.device != torch.get_default_device() else r
+        target = _current_cuda_device()
+        out = r.to(target) if r.device != target else r
+        _cmp_call_count[0] += 1
+        if _cmp_call_count[0] <= 3:
+            print(f"  [topk-patch] _cmp_dev call {_cmp_call_count[0]}: "
+                  f"target={target}, in.device={r.device}, out.device={out.device}",
+                  flush=True)
+        return out
 
     _dsv4.get_window_topk_idxs = _win_dev
     _dsv4.get_compress_topk_idxs = _cmp_dev
+
+    # Also force-defend: monkey-patch sparse_attn to relocate topk_idxs at use
+    # site, as a belt-and-suspenders against fx's tendency to inline the
+    # original function's result as a constant.
+    from scripts.upstream import kernel_shim as _ks
+    _orig_sparse_attn = _ks.sparse_attn
+    _sparse_call_count = [0]
+
+    def _sparse_attn_dev(q, kv, attn_sink, topk_idxs, softmax_scale):
+        tgt = q.device
+        moved = []
+        if topk_idxs.device != tgt:
+            topk_idxs = topk_idxs.to(tgt); moved.append("topk_idxs")
+        if attn_sink.device != tgt:
+            attn_sink = attn_sink.to(tgt); moved.append("attn_sink")
+        _sparse_call_count[0] += 1
+        if _sparse_call_count[0] <= 3:
+            print(f"  [sparse-patch] call {_sparse_call_count[0]}: q.device={tgt}, "
+                  f"moved={moved}", flush=True)
+        return _orig_sparse_attn(q, kv, attn_sink, topk_idxs, softmax_scale)
+
+    _ks.sparse_attn = _sparse_attn_dev
+    _dsv4.sparse_attn = _sparse_attn_dev
+
+    # Indexer.forward has its own internal lazy-default-device allocations
+    # (mask via torch.where(...) at vendor/model.py:426, index_score, etc).
+    # The cleanest fix: wrap Attention.forward AND Indexer.forward to set
+    # torch.set_default_device to the live cuda device for the duration of
+    # the call, so any lazy torch.arange/zeros/where(scalar,...) creations
+    # land on cuda instead of cpu.
+    _wrap_call_count = [0]
+
+    def _wrap_forward(original_forward):
+        def wrapped(self, *args, **kwargs):
+            # Use the first tensor argument's device as the active default
+            tgt = None
+            for a in args:
+                if torch.is_tensor(a):
+                    tgt = a.device
+                    break
+            if tgt is None and torch.cuda.is_available():
+                tgt = torch.device(f"cuda:{torch.cuda.current_device()}")
+            if tgt is None:
+                return original_forward(self, *args, **kwargs)
+            _wrap_call_count[0] += 1
+            if _wrap_call_count[0] <= 3:
+                print(f"  [forward-wrap] call {_wrap_call_count[0]}: "
+                      f"{type(self).__name__}.forward with default device={tgt}",
+                      flush=True)
+            with torch.device(tgt):
+                return original_forward(self, *args, **kwargs)
+        return wrapped
+
+    _dsv4.Attention.forward = _wrap_forward(_dsv4.Attention.forward)
+    _dsv4.Indexer.forward = _wrap_forward(_dsv4.Indexer.forward)
+    _dsv4.Compressor.forward = _wrap_forward(_dsv4.Compressor.forward)
+
+    # NB: an earlier attempt set torch.set_default_device("cuda:0") here, but
+    # that broke the DataLoader's CPU-generator randperm sampler. Rely on
+    # the wrap_forward `with torch.device(tgt):` context inside each call
+    # instead.
+
+    # Verify patches landed in the right namespace
+    import sys
+    _dsv4_check = sys.modules.get("dsv4_upstream_model")
+    print(f"  [patch-check] dsv4 in sys.modules: {_dsv4_check is not None}", flush=True)
+    print(f"  [patch-check] _dsv4 is sys.modules.dsv4_upstream_model: "
+          f"{_dsv4 is _dsv4_check}", flush=True)
+    print(f"  [patch-check] _dsv4.get_window_topk_idxs is _win_dev: "
+          f"{_dsv4.get_window_topk_idxs is _win_dev}", flush=True)
+    print(f"  [patch-check] _dsv4.sparse_attn is _sparse_attn_dev: "
+          f"{_dsv4.sparse_attn is _sparse_attn_dev}", flush=True)
+    print(f"  [patch-check] _ks.sparse_attn is _sparse_attn_dev: "
+          f"{_ks.sparse_attn is _sparse_attn_dev}", flush=True)
+    # Also check what Attention.forward sees
+    _attn_cls = _dsv4.Attention
+    _attn_globals = _attn_cls.forward.__globals__
+    print(f"  [patch-check] Attention.forward.__globals__ is _dsv4.__dict__: "
+          f"{_attn_globals is _dsv4.__dict__}", flush=True)
+    print(f"  [patch-check] Attention.forward sees sparse_attn as _sparse_attn_dev: "
+          f"{_attn_globals.get('sparse_attn') is _sparse_attn_dev}", flush=True)
+    print(f"  [patch-check] Attention.forward sees get_window_topk_idxs as _win_dev: "
+          f"{_attn_globals.get('get_window_topk_idxs') is _win_dev}", flush=True)
 
     # ---- 7. recipe + oneshot --------------------------------------------
     if is_main:
