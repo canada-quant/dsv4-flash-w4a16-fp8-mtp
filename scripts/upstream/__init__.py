@@ -114,45 +114,102 @@ _module.ColumnParallelLinear = GPTQLinear
 _module.RowParallelLinear = GPTQLinear
 
 
-# ---- 5) world_size / rank — dist-aware, defaults to single-process ----
-# Default to (1, 0); the calibration script (or smoke harness) must call
-# ``apply_dist_state()`` AFTER calling ``compressed_tensors.distributed.init_dist()``
-# but BEFORE instantiating ``Transformer(args)``, so the upstream MoE's
-# expert-sharding reads the right values at construction time.
+# ---- 5) world_size / rank — decoupled expert sharding ----
+# Upstream world_size stays at 1 (so ParallelEmbedding / Head / Attention stay
+# full-size, since our GPTQLinear-rebound Column/RowParallelLinear does NOT
+# implement TP-aware reduce). Independently, _expert_world_size / _expert_rank
+# drive MoE.__init__ to shard experts N-way across ranks, giving us the
+# memory savings without the TP correctness rewrite.
 _module.world_size = 1
 _module.rank = 0
+_module._expert_world_size = 1
+_module._expert_rank = 0
+
+
+# Patch MoE.__init__ + MoE.forward to use _expert_world_size / _expert_rank
+# instead of upstream's globals.
+_orig_moe_init = _module.MoE.__init__
+
+
+def _moe_init_ep(self, layer_id, args):
+    nn.Module.__init__(self)
+    self.layer_id = layer_id
+    self.dim = args.dim
+    ews = _module._expert_world_size
+    er = _module._expert_rank
+    assert args.n_routed_experts % ews == 0, (
+        f"n_routed_experts={args.n_routed_experts} not divisible by "
+        f"expert_world_size={ews}"
+    )
+    self.n_routed_experts = args.n_routed_experts
+    self.n_local_experts = args.n_routed_experts // ews
+    self.n_activated_experts = args.n_activated_experts
+    self.experts_start_idx = er * self.n_local_experts
+    self.experts_end_idx = self.experts_start_idx + self.n_local_experts
+    self.gate = _module.Gate(layer_id, args)
+    expert_dtype = (
+        torch.float4_e2m1fn_x2 if args.expert_dtype == "fp4" else None
+    )
+    self.experts = nn.ModuleList([
+        _module.Expert(args.dim, args.moe_inter_dim, dtype=expert_dtype,
+                       swiglu_limit=args.swiglu_limit)
+        if self.experts_start_idx <= i < self.experts_end_idx else None
+        for i in range(self.n_routed_experts)
+    ])
+    assert args.n_shared_experts == 1
+    self.shared_experts = _module.Expert(
+        args.dim, args.moe_inter_dim, swiglu_limit=args.swiglu_limit
+    )
+
+
+def _moe_fwd_ep(self, x, input_ids):
+    shape = x.size()
+    x = x.view(-1, self.dim)
+    weights, indices = self.gate(x, input_ids.flatten())
+    y = torch.zeros_like(x, dtype=torch.float32)
+    counts = torch.bincount(
+        indices.flatten(), minlength=self.n_routed_experts
+    ).tolist()
+    for i in range(self.experts_start_idx, self.experts_end_idx):
+        if counts[i] == 0:
+            continue
+        idx, top = torch.where(indices == i)
+        y[idx] += self.experts[i](x[idx], weights[idx, top, None])
+    # Cross-rank reduce only when expert sharding is active.
+    if _module._expert_world_size > 1:
+        dist.all_reduce(y)
+    y += self.shared_experts(x)
+    return y.type_as(x).view(shape)
+
+
+_module.MoE.__init__ = _moe_init_ep
+_module.MoE.forward = _moe_fwd_ep
 
 
 def apply_dist_state() -> tuple[int, int]:
-    """Force the vendored module's ``world_size`` to 1 so every rank holds the
-    full (unsharded) model.
+    """Set decoupled expert-sharding state from torch.distributed.
 
-    Upstream's ParallelEmbedding / ColumnParallelLinear / RowParallelLinear /
-    MoE-expert-sharding logic reads module-level ``world_size`` at module
-    construction time and shards across ranks. With ``GPTQLinear``-rebound
-    Linear (which doesn't implement TP-aware reduction), running with
-    ``world_size > 1`` produces shape-mismatched modules — e.g. the
-    checkpoint's ``embed.weight`` is ``[129280, 4096]`` but a rank with
-    ``world_size=8`` constructs ``[16160, 4096]``.
+    Upstream's ``world_size`` is forced to 1 (preserves full-size
+    ParallelEmbedding / Head / Attention since our GPTQLinear-rebound
+    Column/RowParallelLinear lacks TP-aware reduce). Separately,
+    ``_module._expert_world_size`` / ``_expert_rank`` are set from
+    ``torch.distributed`` so MoE.__init__ shards experts N-way.
 
-    Data-parallel calibration still works correctly: each rank holds the
-    same full model, the DataLoader's DistributedSampler partitions the
-    768 samples 96-per-rank, and llm-compressor's
-    ``compress_module_list`` all-reduces per-Linear Hessians across ranks
-    before the GPTQ solve. So with this override the topology becomes:
+    Memory math (8 ranks): each rank holds ~26 GB instead of ~568 GB,
+    because 32 of 256 experts are populated per rank. Cross-rank Hessian
+    reduce in llm-compressor + MoE.forward all_reduce handle correctness.
 
-      * 8 processes (torchrun --nproc-per-node 8)
-      * each holds the full ~568 GB model on CPU (mmap'd safetensors are
-        shared across processes via OS page cache)
-      * compress sees 768 effective samples (96 × 8 ranks)
-      * Hessian all-reduce keeps the per-Linear solve identical to
-        single-rank with all 768 samples
-
-    Returns the (world_size, rank) tuple actually set in the shim.
+    Returns (expert_world_size, expert_rank).
     """
+    if dist.is_available() and dist.is_initialized():
+        _module._expert_world_size = dist.get_world_size()
+        _module._expert_rank = dist.get_rank()
+    else:
+        _module._expert_world_size = 1
+        _module._expert_rank = 0
     _module.world_size = 1
     _module.rank = 0
-    return _module.world_size, _module.rank
+    return _module._expert_world_size, _module._expert_rank
 
 
 # ---- 6) re-export the public API --------------------------------------------

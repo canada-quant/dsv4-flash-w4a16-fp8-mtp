@@ -406,8 +406,29 @@ def main():
     # ---- 1. distributed init ---------------------------------------------
     use_dist = "TORCHELASTIC_RUN_ID" in os.environ
     if use_dist:
-        from compressed_tensors.distributed import init_dist
-        init_dist()
+        # NCCL default timeout = 10 min. With 4-rank calibration, large
+        # Hessian REDUCE collectives on later layers can hit this and abort
+        # the run (observed: 600s timeout on layers.5.attn.wo_b 2026-05-20).
+        # Init the process group ourselves with a longer timeout BEFORE
+        # init_dist; init_dist is then a no-op since dist is already up.
+        if not dist.is_initialized():
+            import datetime as _dt
+            _rank = int(os.environ["RANK"])
+            _local_rank = int(os.environ["LOCAL_RANK"])
+            _world_size = int(os.environ["WORLD_SIZE"])
+            _device = torch.device(f"cuda:{_local_rank}")
+            torch.cuda.set_device(_device)
+            dist.init_process_group(
+                backend="nccl",
+                init_method="env://",
+                rank=_rank,
+                world_size=_world_size,
+                device_id=_device,
+                timeout=_dt.timedelta(hours=2),
+            )
+            dist.barrier()
+        # init_dist would re-init; skip if we already did the work.
+        # (Older compressed_tensors versions raise on double-init.)
     elif not dist.is_initialized():
         # llm-compressor's GPTQ compress_modules() calls dist.get_rank()
         # unconditionally — even in single-process mode. Init a 1-rank
@@ -480,10 +501,23 @@ def main():
     if is_main:
         print(f"[load] loaded={loaded} unmatched={len(unmatched)} "
               f"missing={len(missing)} in {time.time()-t1:.1f}s", flush=True)
-    if unmatched:
+    # With decoupled expert sharding (apply_dist_state sets
+    # _expert_world_size = N), each rank's model has only N_routed/N experts
+    # populated; the safetensors contain all 256 experts; per-rank load
+    # naturally skips the (N-1)/N expert tensors that aren't in this rank's
+    # state_dict. Those are "expected unmatched", not a fatal error. Only
+    # bail if there are unmatched NON-expert keys.
+    import re as _re
+    non_expert_unmatched = [
+        k for k in unmatched if _re.search(r"\.experts\.\d+\.", k) is None
+    ]
+    if non_expert_unmatched:
         if is_main:
-            print(f"FATAL: unmatched safetensors keys: {unmatched[:10]}",
-                  flush=True)
+            print(
+                f"FATAL: {len(non_expert_unmatched)} unmatched non-expert "
+                f"safetensors keys: {non_expert_unmatched[:10]}",
+                flush=True,
+            )
         sys.exit(2)
 
     # ---- 4. tokenizer + dataset ------------------------------------------
@@ -621,7 +655,6 @@ def main():
     # instead.
 
     # Verify patches landed in the right namespace
-    import sys
     _dsv4_check = sys.modules.get("dsv4_upstream_model")
     print(f"  [patch-check] dsv4 in sys.modules: {_dsv4_check is not None}", flush=True)
     print(f"  [patch-check] _dsv4 is sys.modules.dsv4_upstream_model: "
@@ -669,13 +702,45 @@ def main():
             output_dir=args.output,
         )
     except Exception as exc:
+        # Known non-fatal: compressed_tensors' from_accelerate post-save hook
+        # raises ``ValueError: Attempted to offload a module twice'' AFTER
+        # the artifact is fully written to disk (config + recipe + safetensors).
+        # We swallow it so post-save processing can complete and the run
+        # reports CALIBRATION_DONE.
+        is_offload_twice = (
+            isinstance(exc, ValueError)
+            and "offload a module twice" in str(exc).lower()
+        )
         if is_main:
             print(f"[oneshot] failed with: {type(exc).__name__}: {exc}",
                   flush=True)
-            print("[oneshot] this is the option-A bail point — consider option B "
-                  "(direct GPTQModifier.apply). Investigate the traceback before retrying.",
-                  flush=True)
-        raise
+            if is_offload_twice:
+                print("[oneshot] non-fatal: artifact already on disk; "
+                      "continuing to post-save processing.", flush=True)
+            else:
+                print("[oneshot] this is the option-A bail point — consider option B "
+                      "(direct GPTQModifier.apply). Investigate the traceback before retrying.",
+                      flush=True)
+        if not is_offload_twice:
+            raise
+
+    # Post-save: inject scale_fmt into the saved config.json's
+    # quantization_config. vLLM's DeepseekV4Model reads
+    # ``config.quantization_config["scale_fmt"]`` and the FP8 block path
+    # uses "ue8m0". llmcompressor's save flow doesn't write this field,
+    # so we patch the saved file.
+    if is_main:
+        out_cfg = os.path.join(args.output, "config.json")
+        if os.path.exists(out_cfg):
+            with open(out_cfg) as f:
+                _cfg = json.load(f)
+            _qc = _cfg.setdefault("quantization_config", {})
+            if _qc.get("scale_fmt") is None:
+                _qc["scale_fmt"] = "ue8m0"
+                with open(out_cfg, "w") as f:
+                    json.dump(_cfg, f, indent=2)
+                print("[post-save] set quantization_config.scale_fmt = ue8m0",
+                      flush=True)
 
     if is_main:
         print(f"[oneshot] done in {time.time()-t_oneshot:.1f}s", flush=True)
