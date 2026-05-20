@@ -1,31 +1,40 @@
 # PLAN — DeepSeek-V4-Flash W4A16-FP8 + MTP re-quant
 
-> **Status snapshot (2026-05-19, updated):** Phase 0 ✓ done. Phase 1 ✓ done (BF16 dequant at `/scratch/weights/bf16-mtp`). Phase 4 ✓ done (vLLM built + patched). **Phases 2 and 3 SUPERSEDED.** The previous session's `model_free_ptq` (RTN) pivot is reversed — the resulting artifact is moved to `/scratch/weights/w4a16-fp8-mtp-rtn-fallback` and is **not the deliverable** because it does not match the predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` (which is GPTQ-calibrated). Phase 2 will be re-done via GPTQ oneshot per the original plan, using the vendored upstream adapter at `scripts/upstream/`. The concrete delta — what's already scaffolded vs what still needs to be built — is in `PHASE2_GPTQ_DELTA.md`. Phase 2 will not run until the user approves that delta.
+> **Status snapshot (2026-05-20, H200 pivot):** Hardware pivoted from `p6-b300.48xlarge` (us-west-2) to `p5en.48xlarge` (us-east-2) after multi-rank NCCL friction on Blackwell. The H200 box is the **same hardware family** the predecessor `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` was successfully calibrated on, so the plan is now: run the predecessor's proven GPTQ recipe verbatim on H200 and layer in only the MTP-preservation deltas we developed during the B300 attempt (transformers regex patch, llm-compressor helpers patch, MTP shim in `scripts/quantize_v4_w4a16_mtp.py`, 7 dryrun friction fixes, decoupled MoE expert sharding). The earlier B300 phase progress (Phase 0/1 artifacts on the retired box) does not transfer — `/scratch` is ephemeral and the box is in another region. Restart from Phase 0 on the H200.
+>
+> **B300 status archived (2026-05-19):** Phase 0 ✓, Phase 1 ✓ (543 GB BF16 dequant), Phase 4 ✓ (vLLM built + patched). RTN fallback (`/scratch/weights/w4a16-fp8-mtp-rtn-fallback`) and GPTQ scaffolds with 7 dryrun fixes shipped. Multi-rank GPTQ aborted on NCCL; full GPTQ never completed. Useful reference, not a resumable state.
 
-**Goal:** Republish `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K on Blackwell DC.
+**Goal:** Republish `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` as `pastapaul/DeepSeek-V4-Flash-W4A16-FP8-MTP` with the MTP layer (layer 43) correctly calibrated in the same GPTQ pass — no SFT, no GRPO, no scope creep. Beat the "Acti" reference of 85.52 tok/s @ 524K (originally framed against Blackwell DC; H200 reference is the predecessor's own throughput numbers).
 
-**Hardware:** AWS `p6-b300.48xlarge` — 8× B300 (Blackwell DC, SM 10.0, 275 GB HBM3e per GPU verified, 2,200 GB total).
+**Hardware (active):** AWS `p5en.48xlarge` — 8× H200 (Hopper, SM 9.0, 143,771 MiB ≈ 140 GB HBM3e per GPU, ~1.14 TB total). 4.9 TB root EBS, 27.6 TB ephemeral LVM at `/opt/dlami/nvme`, 1.0 TB `/dev/shm`.
 
-**AMI:** `ami-02e9fc7da15a197f9` (Ubuntu 24.04, Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.11, x86_64).
+**AMI:** `ami-0bae40837d7422a24` (Ubuntu 24.04, Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.11, 20260517).
 
-**Date written:** 2026-05-19.
+**Date written:** 2026-05-19, pivoted 2026-05-20.
 
-## Live instance (as of 2026-05-19)
+## Live instance (H200, active as of 2026-05-20)
 
-- **Instance ID:** `i-0714f36a266c8c59b`
-- **Region:** `us-west-2`
-- **Public IPv4:** `35.161.108.205`
-- **Public DNS:** `ec2-35-161-108-205.us-west-2.compute.amazonaws.com`
-- **Private IPv4:** `172.31.32.120`
-- **SSH:** `ssh -i ~/.ssh/qwenv4-quant.pem ubuntu@35.161.108.205` (key on basementdocker)
-- **Subnet:** `subnet-2a9bf161`, VPC `vpc-ad9f63d5`
-- **Verified on first boot:**
-  - 8× `NVIDIA B300 SXM6 AC`, driver `595.58.03`, 275 GB HBM3e each
-  - `/dev/shm` 2.0 TB tmpfs (no remount needed)
-  - Instance store **27.6 TB** RAID0/LVM at `/opt/dlami/nvme` (already mounted by DLAMI — use as `/scratch`)
-  - EBS: 500 GB root + 300 GB unmounted at `/dev/nvme1n1` (mount as `/data`)
-  - `nvcc` not in PATH — add `/usr/local/cuda/bin` (CUDA 13.x installed)
+- **Instance ID:** `i-06a6c91366be7c18a`
+- **Region:** `us-east-2`
+- **Public IPv4:** `3.147.85.24`
+- **Public DNS:** `ec2-3-147-85-24.us-east-2.compute.amazonaws.com`
+- **Private IPv4:** `172.31.11.99`
+- **SSH:** `ssh -i ~/.ssh/h200-us-east-2.pem ubuntu@3.147.85.24` (private key on basementdocker at `~/.ssh/h200-us-east-2.pem`)
+- **Subnet:** `subnet-afb5ecc7`, VPC `vpc-28122340`
+- **Lifecycle:** capacity-block
+- **Verified on first boot (2026-05-20):**
+  - 8× `NVIDIA H200`, driver `595.64`, 143,771 MiB per GPU
+  - `/dev/shm` 1.0 TB tmpfs
+  - Instance store **27.6 TB** LVM RAID0 at `/opt/dlami/nvme` (8× 3.5 TB NVMe — already mounted by DLAMI — symlink as `/scratch`)
+  - Root EBS: **4.9 TB** at `nvme1n1p1` (mounted at `/`). No separate `/data` EBS — put venvs/build artifacts under `/opt` or `~`.
+  - `/opt/pytorch/bin/python` → torch `2.11.0+cu130`, CUDA 13.0 (runtime only)
+  - `nvcc` not in PATH — for source builds install `cuda-toolkit-13-0` and use `/usr/local/cuda`
 - **IAM role:** none yet (add post-launch for S3 access to ship final artifact)
+
+## Retired instance (B300, archived)
+
+- **Instance ID:** `i-0714f36a266c8c59b`, `p6-b300.48xlarge`, `us-west-2`, public IPv4 `35.161.108.205`, profile `rozo`
+- **Why retired:** multi-rank NCCL friction on Blackwell allreduce blocked the 8-rank GPTQ even after the decoupled expert shard. The H200 has a longer-validated NCCL path and matches the predecessor's calibration hardware.
 
 ---
 
@@ -87,44 +96,45 @@ Patches **no longer required** (landed upstream):
 
 ### Phase 0 — Instance bring-up (1–2 h)
 
+H200 path: run the bootstrap script — it handles cuda-toolkit-13-0, venv creation, /scratch symlink, and patch application idempotently.
+
 ```bash
-# After launching p6-b300.48xlarge with ami-02e9fc7da15a197f9:
-nvidia-smi                              # Driver ≥580 for SM 10.0a
-nvcc --version                          # CUDA 13.x
-ibv_devices && fi_info -p efa           # EFA present
-nvidia-smi nvlink -s                    # NVSwitch firmware ≥35.2015.4718
-df -h /dev/shm                          # need ≥1.8 TiB; remount if needed:
-                                        # sudo mount -o remount,size=1900G /dev/shm
-
-# Two clean venvs — NEVER share between calibration and serving stacks
-python -m venv ~/venv-calib && source ~/venv-calib/bin/activate
-pip install --upgrade pip
-
-# torch must come first so llm-compressor doesn't drag in a mismatched build
-pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu130
-pip install transformers==5.8.1 compressed-tensors==0.15.0.1
-pip install "git+https://github.com/vllm-project/llm-compressor.git@f2aa32e2bde1941182d8f8a348837574969335e6"
-pip install accelerate datasets safetensors
-
-deactivate
-python -m venv ~/venv-serve && source ~/venv-serve/bin/activate
-pip install --upgrade pip
-pip install "git+https://github.com/jasl/vllm.git@3424fba51301504262c3d8355e2560469f18c9c4"
+ssh -i ~/.ssh/h200-us-east-2.pem ubuntu@3.147.85.24
+sudo apt-get install -y git
+git clone git@github.com:pasta-paul/dsv4-flash-w4a16-fp8-mtp.git ~/dsv4-flash-w4a16-fp8-mtp
+bash ~/dsv4-flash-w4a16-fp8-mtp/scripts/bootstrap_p5en_h200.sh
 ```
 
-### Phase 1 — Dequant FP4/FP8 → BF16 (preserve MTP) (2–3 h on 8× B300)
+What the script does (see `scripts/bootstrap_p5en_h200.sh` for the source of truth):
+- Installs `cuda-toolkit-13-0` if `/usr/local/cuda/lib64` missing
+- Symlinks `/scratch -> /opt/dlami/nvme`, sets `HF_HOME=/scratch/hf-cache`
+- Creates `~/venv-calib` with torch 2.11 cu130 + transformers 5.8.1 + compressed-tensors 0.15.1a20260515 + llm-compressor `f2aa32e2`
+- Creates `~/venv-serve` and source-builds jasl/vllm `3424fba5` against `/usr/local/cuda`
+- Applies the two MTP-preservation patches to venv-calib and the two `packed_modules_mapping` patches to venv-serve
+
+Sanity checks after bootstrap:
+```bash
+nvidia-smi                              # 8× H200, driver ≥580 for SM 9.0a
+nvcc --version                          # CUDA 13.x at /usr/local/cuda/bin/nvcc
+ibv_devices && fi_info -p efa           # EFA present (p5en has EFA)
+df -h /dev/shm /scratch                 # /dev/shm ~1.0 TB, /scratch 27.6 TB
+~/venv-calib/bin/python -c "import transformers, llmcompressor, compressed_tensors; print('calib ok')"
+~/venv-serve/bin/python -c "import vllm; print('serve ok', vllm.__version__)"
+```
+
+### Phase 1 — Dequant FP4/FP8 → BF16 (preserve MTP) (~10 min on H200, IO-bound)
 
 ```bash
-huggingface-cli download deepseek-ai/DeepSeek-V4-Flash --local-dir ./weights/upstream
+source ~/venv-calib/bin/activate
+huggingface-cli download deepseek-ai/DeepSeek-V4-Flash --local-dir /scratch/weights/upstream
 
-# Apply transformers patch
-TRANSFORMERS_DIR=$(python -c 'import transformers; print(transformers.__path__[0])')
-patch -p1 -d "$TRANSFORMERS_DIR" < patches/modeling_deepseek_v4.py.diff
+# Patches are already applied by bootstrap_p5en_h200.sh; verify:
+python -c "import transformers, re, inspect; src=inspect.getsource(__import__('transformers.models.deepseek_v4.modeling_deepseek_v4', fromlist=['*']).DeepseekV4PreTrainedModel); print('PATCHED' if '_keys_to_ignore_on_load_unexpected = []' in src else 'PATCH MISSING')"
 
 # Dequant with explicit MTP-key assertion. See scripts/dequant_mtp.py.
 python scripts/dequant_mtp.py \
-    --input  ./weights/upstream \
-    --output ./weights/bf16-mtp
+    --input  /scratch/weights/upstream \
+    --output /scratch/weights/bf16-mtp
 ```
 
 **Verification gate:** `scripts/verify_mtp_keys.py ./weights/bf16-mtp` must report ≥1 MTP tensor. Abort if zero.
@@ -149,7 +159,7 @@ The point of pinning is so this run is comparable to the predecessor's quality b
 
 `torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py ...` — the calibration script calls `compressed_tensors.distributed.init_dist()` which reads `RANK`/`LOCAL_RANK`/`WORLD_SIZE` from torchrun's env, sets `cuda:LOCAL_RANK` as the default device, and calls `dist.init_process_group(backend="nccl", ...)`. The vendored `Transformer`'s MoE then shards `n_routed_experts=256` across `world_size=8` ranks = 32 experts per rank.
 
-### Phase 2 — GPTQ calibration W4A16-FP8 + MTP layer 43 (8–12 h on 8× B300)
+### Phase 2 — GPTQ calibration W4A16-FP8 + MTP layer 43 (~10–14 h on 8× H200; predecessor recipe verbatim + MTP shim)
 
 > **2026-05-19 update — architecture blocker:** transformers 5.8.1's
 > `deepseek_v4/` package has **no MTP module class**, only
@@ -172,18 +182,23 @@ The point of pinning is so this run is comparable to the predecessor's quality b
 LLMC_DIR=$(python -c 'import llmcompressor; print(llmcompressor.__path__[0])')
 patch -p1 -d "$LLMC_DIR" < patches/helpers.py.diff
 
-# /dev/shm sized in Phase 0; B300-specific env (do NOT use H200 env block)
-export TORCH_CUDA_ARCH_LIST="10.0a"            # NOT 9.0a
+# H200 env block (Hopper, SM 9.0a — predecessor's proven block)
+export TORCH_CUDA_ARCH_LIST="9.0a"
 export NCCL_TIMEOUT=1800
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3600
 export TORCH_NCCL_BLOCKING_WAIT=0
-# DO NOT SET: PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True (breaks Blackwell allreduce)
+# Hopper tolerates expandable_segments; predecessor used it. The B300-specific
+# prohibition does NOT apply here.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 torchrun --nproc-per-node 8 scripts/quantize_v4_w4a16_mtp.py \
     --samples 768 --batch-size 4 \
-    --input  ./weights/bf16-mtp \
-    --output ./weights/w4a16-fp8-mtp
+    --input  /scratch/weights/bf16-mtp \
+    --output /scratch/weights/w4a16-fp8-mtp
 ```
+
+**Pre-launch gate — N-rank load test (see `memory:dryrun_projection_blindspot`):**
+Before kicking off the multi-hour calibration, run `scripts/loadtest_sharded.py` at 8 ranks and confirm per-rank RSS < ~250 GB (system has ~2 TB DDR5 on p5en.48xlarge). The decoupled MoE expert sharding patch sets `_expert_world_size=8` so each rank carries 32 of 256 experts — the load test exists specifically to confirm this is wired correctly before burning a long run.
 
 **Recipe topology** (extends the original by one layer; names corrected to
 DeepSeek internal convention after 2026-05-19 shard inspection — see
@@ -236,8 +251,10 @@ print('Patches OK')
 ### Phase 5 — Smoke test single instance (TP=2, 1 GPU pair) (30 min)
 
 ```bash
-# B300 serve config — uses native FlashMLA / DeepGEMM, no Triton fallbacks
-CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_b300_tp2.sh ./weights/w4a16-fp8-mtp 8000
+# H200 serve config — use the predecessor's proven Hopper flags
+# (scripts/serve_b300_tp2.sh is the B300 variant; H200 equivalent is named
+# serve_h200_tp2.sh — same script with TORCH_CUDA_ARCH_LIST="9.0a")
+CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_h200_tp2.sh /scratch/weights/w4a16-fp8-mtp 8000
 ```
 
 `scripts/serve_b300_tp2.sh` core flags:
@@ -280,11 +297,11 @@ Run on harness `jasl/vllm-ds4-sm120-harness` HEAD:
 ### Phase 7 — 4-instance full-node deploy (2 h)
 
 ```bash
-# Pin one TP=2 instance per GPU pair; 4 instances = full p6-b300.48xlarge utilization
-CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_b300_tp2.sh ./weights/w4a16-fp8-mtp 8000 &
-CUDA_VISIBLE_DEVICES=2,3 bash scripts/serve_b300_tp2.sh ./weights/w4a16-fp8-mtp 8001 &
-CUDA_VISIBLE_DEVICES=4,5 bash scripts/serve_b300_tp2.sh ./weights/w4a16-fp8-mtp 8002 &
-CUDA_VISIBLE_DEVICES=6,7 bash scripts/serve_b300_tp2.sh ./weights/w4a16-fp8-mtp 8003 &
+# Pin one TP=2 instance per GPU pair; 4 instances = full p5en.48xlarge utilization
+CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_h200_tp2.sh /scratch/weights/w4a16-fp8-mtp 8000 &
+CUDA_VISIBLE_DEVICES=2,3 bash scripts/serve_h200_tp2.sh /scratch/weights/w4a16-fp8-mtp 8001 &
+CUDA_VISIBLE_DEVICES=4,5 bash scripts/serve_h200_tp2.sh /scratch/weights/w4a16-fp8-mtp 8002 &
+CUDA_VISIBLE_DEVICES=6,7 bash scripts/serve_h200_tp2.sh /scratch/weights/w4a16-fp8-mtp 8003 &
 wait
 ```
 
