@@ -223,6 +223,20 @@ def main():
         print(f"[summary] mean per-rank: {rss_tensor.item()/ews:.1f} GB",
               flush=True)
 
+    # Sharding invariant: walk the model and assert experts are disjoint
+    # across ranks. This is a precondition for the multirank_patches
+    # (skip-reduce-for-sharded-modules) to be safe. If a layer's experts
+    # are accidentally replicated, "skip reduce" would silently lose the
+    # other ranks' Hessian contributions.
+    from scripts.multirank_patches import assert_sharding_invariant
+    assert_sharding_invariant(
+        transformer,
+        world_size=ews,
+        rank=erk,
+        n_routed_experts=margs.n_routed_experts,
+        verbose=is_main,
+    )
+
 
 if __name__ == "__main__":
     main()

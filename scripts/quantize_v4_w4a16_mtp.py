@@ -520,6 +520,41 @@ def main():
             )
         sys.exit(2)
 
+    # ---- 3.5 multi-rank patches + sharding invariant + checkpoint hooks ---
+    # See scripts/multirank_patches.py for the full rationale. Three patches
+    # (Observer.synchronize no-op + GPTQ reduce/broadcast skip-sharded) close
+    # NCCL collective hangs that arise from our decoupled expert shard — a
+    # path the predecessor calibration never exercised (it used HF
+    # auto-offload, which kept module sets identical across ranks).
+    from scripts.multirank_patches import (
+        assert_sharding_invariant,
+        apply_all_patches,
+    )
+    from scripts.gptq_checkpoint import (
+        list_completed_subgraphs,
+        install_subgraph_checkpoint_hook,
+    )
+    # Verify the shard is actually disjoint before patching. If experts
+    # were accidentally replicated, "skip reduce for sharded modules" would
+    # silently corrupt the Hessian — catch loud here instead.
+    assert_sharding_invariant(
+        transformer,
+        world_size=world_size,
+        rank=rank,
+        n_routed_experts=margs.n_routed_experts,
+        verbose=is_main,
+    )
+    apply_all_patches(world_size=world_size, verbose=is_main)
+    # Install the per-subgraph checkpoint hook; resume any already-completed
+    # subgraphs from /scratch/weights/checkpoints/.
+    _completed = list_completed_subgraphs(verbose=is_main)
+    install_subgraph_checkpoint_hook(
+        rank=rank,
+        world_size=world_size,
+        completed=_completed,
+        verbose=is_main,
+    )
+
     # ---- 4. tokenizer + dataset ------------------------------------------
     if is_main:
         print(f"[tokenizer] loading from {args.weights}", flush=True)
