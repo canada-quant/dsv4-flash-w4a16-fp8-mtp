@@ -167,11 +167,14 @@ def patch_config(artifact_dir: Path) -> None:
         }
         print("[cfg] group_0.input_activations restored (FP8 dynamic group)")
 
-    # (3) scale_fmt: ue8m0 is set by llm-compressor; predecessor has it
-    # absent. Both should work, but match predecessor for safety.
-    if "scale_fmt" in qc:
-        del qc["scale_fmt"]
-        print("[cfg] scale_fmt removed (matching predecessor)")
+    # (3) scale_fmt: vLLM jasl/vllm@3424fba51 requires this key — workers
+    # crash with KeyError('scale_fmt') without it. The predecessor's
+    # published config has it absent, but the predecessor's serve uses a
+    # slightly different vLLM rev. For our build, force ue8m0 (matches
+    # what llm-compressor writes natively).
+    if not qc.get("scale_fmt"):
+        qc["scale_fmt"] = "ue8m0"
+        print("[cfg] quantization_config.scale_fmt = ue8m0")
 
     json.dump(cfg, open(cfg_p, "w"), indent=2)
     print(f"[cfg] wrote {cfg_p}")
