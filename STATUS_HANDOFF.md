@@ -4,6 +4,35 @@ User left for sleep around 06:30 UTC on 2026-05-21 authorizing autonomous
 progression to Phase 2 launch. Working through 2026-05-21 ~12:30 UTC
 (~6h autonomous). This is the situation when you wake up.
 
+## ⚠️ HARD CHECKPOINT — read this BEFORE debugging any error
+
+**Rule (added 2026-05-21 17:50 UTC after this rule was violated 3×
+across sessions):** if you hit an error on an artifact that descends
+from predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` work, the
+FIRST THREE ACTIONS are:
+
+1. **Read predecessor's [README](https://github.com/canada-quant/dsv4-flash-w4a16-fp8/blob/main/README.md) + [`patches/VERSIONS.md`](https://github.com/canada-quant/dsv4-flash-w4a16-fp8/blob/main/patches/VERSIONS.md)** in full. The predecessor's repo documents the EXACT vLLM build pin + vendored patches that shipped a working serve. Don't skip this.
+
+2. **Compare predecessor's build pin to ours.** Predecessor uses
+`jasl/vllm@ds4-sm120-experimental` (2026-05-06, production-validated).
+If we're on something else (e.g. `ds4-sm120-preview-dev`), call out the
+delta explicitly.
+
+3. **Report the delta to the user before iterating.** Don't start
+patching the artifact or the build until the user confirms the path
+forward.
+
+**Why this rule exists:** on 2026-05-21 morning the H200 agent spent ~4
+hours debugging serve smoke against `preview-dev` (bleeding edge) when
+predecessor's documented build (`ds4-sm120-experimental`) was the
+known-good base. The probe was run too late; predecessor-repo-read was
+skipped three times before user prompted it. Cost: 4 hours of patches
+against a broken build, one Option-Y violation that was rolled back.
+
+The rule applies to BOTH the W4A16 repo (this one) and the NVFP4 sibling
+(`canada-quant/dsv4-flash-nvfp4-fp8-mtp`) — both descend from the same
+predecessor recipe topology.
+
 ## Bottom line
 
 Phase 1 + iter 8 calibration smoke **succeeded** — first DSv4-Flash quant
