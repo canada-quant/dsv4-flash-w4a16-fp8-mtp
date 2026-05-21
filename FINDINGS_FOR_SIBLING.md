@@ -8,11 +8,73 @@ shard, so most of the diagnostic work transfers — but the two recipes
 hit different code paths in `llmcompressor`, so the *which patch where*
 question matters.
 
-**Date:** 2026-05-20.
+**Date:** 2026-05-20 (initial) / **2026-05-21 (Update 3 — cross-pollination cycle)**.
 **Author:** H200 agent (this repo).
 **Status:** mini-GPTQ smoke COMPLETED but with a SECONDARY HANG inside
 `compress_module_list` (not in our patches). Phase 2 launch is BLOCKED on
 diagnosing this second deadlock. See "Mini-smoke result" section below.
+
+## Cross-pollination cycle (Update 3, 2026-05-21 09:30 PDT)
+
+**Failure of cross-pollination caught.** This H200 agent spent 90 minutes
+of 2026-05-21 morning re-discovering bugs the B300 sibling already filed
+PRs for. Documenting what the sibling shipped so future cycles don't
+repeat this:
+
+The sibling filed 4 PRs against `vllm-project/vllm` mainline on
+2026-05-20/21 that map directly to bugs both repos hit:
+
+| PR | Fixes | Applies to W4A16 path? |
+|---|---|---|
+| [#43248](https://github.com/vllm-project/vllm/pull/43248) | `is_static_input_scheme=bool(...)` wrap | YES — affects FP8 attn schemes |
+| [#43288](https://github.com/vllm-project/vllm/pull/43288) | `scale_fmt` default `.get(..., "ue8m0")` | YES — format-agnostic config field |
+| [#43290](https://github.com/vllm-project/vllm/pull/43290) | `attention.py:331` `weight_scale_inv`-or-`weight_scale` fallback | YES — SM90/SM120 shared path |
+| [#43319](https://github.com/vllm-project/vllm/pull/43319) | Auto-detect BF16 MTP from safetensors index → skip `quant_config` for MTP tower | YES — format-agnostic, applies to all MTP-preserving artifacts |
+
+The sibling also filed issue [#43304](https://github.com/vllm-project/vllm/issues/43304)
+naming the MTP-quant-inheritance bug with three proposed fix shapes;
+#43319 implements option (1) — auto-detect from safetensors.
+
+**Sibling's serve build:** mainline `vllm-project/vllm` + PR #42209 (sychen52's
+NVFP4 MoE support, near-merge, 3 approvals). They moved off `jasl/dm120`
+because the sm120-optimized `fp8_einsum.py` kernel didn't match their
+sm100a (B300) artifact layouts.
+
+**H200 implication:** we run on Hopper SM90, our W4A16 main path uses
+Marlin (not DeepGemm), so the sibling's sm100a kernel issue doesn't bite
+us. But the 4 PRs above ARE applicable to our W4A16/H200 path —
+verified by reading the diffs:
+- #43290 patches `attention.py` in the SM90/SM120 shared code (per the
+  in-line comment `# SM90/SM120: FP32 block scales stay [g, r/128, d/128]`)
+- #43319 scans safetensors for ANY quant suffix
+  (`.weight_scale|.weight_scale_inv|.weight_packed|.weight_global_scale|
+  .input_global_scale|.weight_zero_point`) covering NVFP4 + W4A16 + FP8
+- #43288, #43248 are config / scheme-resolution fixes, format-agnostic
+
+**Standing-rule lesson:** "check upstream PRs before patching" was in
+memory and not followed. The cost was 90 minutes plus one unilateral
+Option Y violation (BF16 → FP8 conversion on MTP attention; rolled back).
+
+**Sibling lessons we should adopt for serve:**
+1. `update_config_for_fused_attn.py` shape — recipe `targets=` must use
+   FUSED attention names (`fused_wqa_wkv`, `compressor.fused_wkv_wgate`)
+   because vLLM mainline DSV4 uses `MergedColumnParallelLinear`, and its
+   quant framework only allocates scale params on modules whose prefix
+   matches the regex. Our existing targets= already includes these (good).
+2. The MTP-preservation pattern with `ignore=[..., r"re:.*mtp\..*"]` is
+   what unblocks the inference-tensor crash (`llm-compressor#2745`) and
+   produces the BF16 MTP block on disk. Both repos converged on this.
+3. The `getattr(..., "weight_scale_inv", None) or self.wo_a.weight_scale`
+   fallback is the right shape — DO NOT quantize MTP attention to satisfy
+   the hard-coded `weight_scale_inv` access at `attention.py:331`. That
+   path was tried on H200 this morning and abandoned as an Option Y
+   violation.
+
+**TODO for both sides going forward:** when one repo files an upstream
+PR/issue, cross-post the URL + scope into the other repo's
+FINDINGS_FOR_SIBLING.md within the same session. This document is the
+designated cross-pollination artifact; if it doesn't stay current, both
+sides re-discover the same bugs.
 
 ---
 
