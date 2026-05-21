@@ -20,11 +20,16 @@ routed experts):
   Y4. model.mtp.0.self_attn.*.weight_scale count: 0
   Y5. model.mtp.0.mlp.experts.*.{gate,up,down}_proj.weight present at BF16
       (NOT weight_packed; loaded as 16-bit)
-  Y6. model.mtp.0.* total key count > 2000 (MTP block present at all)
+  Y6. model.mtp.0.* total key count >= 768 (MTP block present at all)
+      Note: BF16 MTP has 768 expert .weight + ~29 other = ~797 keys.
+      Quantized MTP would have ~2300+ keys (extra weight_packed/scale/etc).
+      So ">=768" tests presence; "<=900" would test it's BF16, but we
+      check Y1-Y4 directly for that.
 
   Auxiliary (must be BF16):
   A1. model.embed_tokens.weight: BF16
-  A2. lm_head.weight: BF16
+  A2. Output head: BF16. DSV4-Flash uses `head.weight` (not `lm_head.weight`).
+      Either name is accepted.
   A3. model.norm.weight: BF16
 
 Failure of any invariant aborts with a clear message. Pass the artifact
@@ -104,7 +109,10 @@ def main():
     ]
 
     has_embed = "model.embed_tokens.weight" in weight_map
-    has_lm_head = "lm_head.weight" in weight_map
+    # DSV4-Flash uses `head.weight` (not `lm_head.weight`); accept either.
+    has_lm_head = (
+        "lm_head.weight" in weight_map or "head.weight" in weight_map
+    )
     has_norm = "model.norm.weight" in weight_map
 
     print(f"Artifact: {root}")
@@ -125,11 +133,17 @@ def main():
     print(f"  Y4. MTP attn weight_scale:    {len(mtp_attn_scale)} (expect 0)")
     print(f"  Y5. MTP expert .weight (BF16): {len(mtp_expert_bf16)}"
           f" (expect ~768 = 256 experts * 3 projections)")
-    print(f"  Y6. MTP total keys: {len(mtp_keys)} (expect >2000)")
+    print(f"  Y6. MTP total keys: {len(mtp_keys)} (expect >=768; ~797 typical for BF16)")
     print()
     print("Auxiliary tensors:")
     print(f"  A1. model.embed_tokens.weight: {'present' if has_embed else 'MISSING'}")
-    print(f"  A2. lm_head.weight: {'present' if has_lm_head else 'MISSING'}")
+    head_loc = (
+        "lm_head.weight" if "lm_head.weight" in weight_map
+        else "head.weight" if "head.weight" in weight_map
+        else None
+    )
+    print(f"  A2. output head: {head_loc if head_loc else 'MISSING'}"
+          f" (DSV4-Flash uses head.weight)")
     print(f"  A3. model.norm.weight: {'present' if has_norm else 'MISSING'}")
 
     # config.json sanity
@@ -168,13 +182,16 @@ def main():
         failed.append(
             f"MTP attn weight_scale = {len(mtp_attn_scale)} (must be 0)"
         )
-    if len(mtp_keys) < 2000:
+    if len(mtp_keys) < 768:
         failed.append(
-            f"MTP key count = {len(mtp_keys)} (expect >2000); "
+            f"MTP key count = {len(mtp_keys)} (expect >=768 for 256x3 experts); "
             "MTP may have been dropped at save"
         )
     if not has_embed or not has_lm_head:
-        failed.append("missing embed_tokens or lm_head")
+        failed.append(
+            "missing embed_tokens or output head "
+            "(checked lm_head.weight + head.weight)"
+        )
     if "layer_types" in cfg and len(cfg["layer_types"]) != 43:
         failed.append(
             f"config.layer_types len = {len(cfg['layer_types'])} (expect 43); "
