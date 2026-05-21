@@ -81,32 +81,97 @@ def restore_source_only_config_keys(
 
 
 def patch_config(artifact_dir: Path) -> None:
+    """Rewrite config.json fields so vLLM's compressed-tensors scheme
+    resolution finds the right scheme for every quantized layer.
+
+    The recipe writes targets= against the HF-renamed module names
+    (`model.layers.X.self_attn.q_a_proj`, `model.layers.X.mlp.experts.Y.gate_proj`).
+    vLLM's deepseek_v4 model uses the UPSTREAM names internally
+    (`model.layers.X.attn.wq_a`, `model.layers.X.ffn.experts.Y.w1`)
+    — so the HF-only targets never match and vLLM falls back to
+    UnquantizedFusedMoEMethod, which allocates BF16 tensors for what
+    should have been W4A16 weights, triggering CUDA OOM during init.
+
+    Fix: rewrite targets to the predecessor's broad pattern that matches
+    both naming conventions:
+      group_0 (attention FP8_BLOCK):
+        re:.*attn\\.(wq_a|wq_b|wkv|wo_a|wo_b|fused_wqa_wkv|q_a_proj|q_b_proj|kv_proj|o_a_proj|o_b_proj)$
+      group_1 (routed experts W4A16):
+        re:.*experts\\.\\d+\\.(w1|w2|w3|gate_proj|up_proj|down_proj|gate_up_proj)$
+
+    Discovered while running scripts/option_b_serve_smoke.sh against the
+    iter 8 smoke artifact: vLLM crashed with "Tried to allocate 4.00 GiB"
+    OOM during make_layers (line 646 of vllm/model_executor/models/utils.py).
+    Root cause traced through vllm/model_executor/layers/quantization/
+    compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py
+    `get_moe_method` which probes `layer_name + ".0.gate_proj"` against
+    targets= and returns UnquantizedFusedMoEMethod on miss.
+    """
     cfg_p = artifact_dir / "config.json"
     cfg = json.load(open(cfg_p))
     qc = cfg.setdefault("quantization_config", {})
 
-    # (1) group_1.targets: rename w1|w2|w3 -> gate_proj|up_proj|down_proj
+    # (1) targets: rewrite to the predecessor's broad pattern (both naming
+    # conventions). Don't try to detect/preserve the old narrow form — the
+    # narrow form is always wrong for serve-time. This also covers older
+    # artifacts that were saved with mtp.\d+ paths in targets.
+    g0 = qc.get("config_groups", {}).get("group_0")
+    if g0 is not None:
+        old0 = list(g0.get("targets", []))
+        g0["targets"] = [
+            r"re:.*attn\.(wq_a|wq_b|wkv|wo_a|wo_b|fused_wqa_wkv|"
+            r"q_a_proj|q_b_proj|kv_proj|o_a_proj|o_b_proj)$",
+            r"re:.*attn\.compressor\."
+            r"(wgate|wkv|fused_wkv_wgate|gate_proj|kv_proj)$",
+            r"re:.*attn\.indexer\.(weights_proj|wq_b|q_b_proj)$",
+            r"re:.*attn\.indexer\.compressor\."
+            r"(wgate|wkv|gate_proj|kv_proj)$",
+        ]
+        if old0 != g0["targets"]:
+            print(f"[cfg] group_0 targets rewritten (was: {old0[:1]}...)")
+
     g1 = qc.get("config_groups", {}).get("group_1")
     if g1 is not None:
-        old = list(g1.get("targets", []))
-        new = [
-            t.replace("(w1|w2|w3)", "(gate_proj|up_proj|down_proj)")
-            for t in old
+        old1 = list(g1.get("targets", []))
+        g1["targets"] = [
+            r"re:.*experts\.\d+\."
+            r"(w1|w2|w3|gate_proj|up_proj|down_proj|gate_up_proj)$",
         ]
-        if old != new:
-            g1["targets"] = new
-            print(f"[cfg] group_1 targets: {old} -> {new}")
+        if old1 != g1["targets"]:
+            print(f"[cfg] group_1 targets rewritten (was: {old1[:1]}...)")
 
-    # (2) group_0.input_activations = None so W8A16Fp8 scheme triggers
-    g0 = qc.get("config_groups", {}).get("group_0")
-    if g0 is not None and g0.get("input_activations") is not None:
-        g0["input_activations"] = None
-        print("[cfg] group_0.input_activations cleared (W8A16Fp8 path)")
+    # (2) group_0.input_activations: predecessor keeps the FP8 dict
+    # (W8A8Fp8 dynamic group quantization). Earlier we cleared it for
+    # W8A16Fp8, but that turned out to be wrong for the DSv4 FP8_BLOCK
+    # path. If group_0 has weights.strategy=block and num_bits=8, it's
+    # FP8_BLOCK — restore activations from the recipe.
+    if (
+        g0 is not None
+        and g0.get("weights", {}).get("strategy") == "block"
+        and g0.get("input_activations") is None
+    ):
+        # Default dynamic FP8 group quant (predecessor's value):
+        g0["input_activations"] = {
+            "actorder": None,
+            "block_structure": None,
+            "dynamic": True,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": None,
+            "observer_kwargs": {},
+            "scale_dtype": None,
+            "strategy": "group",
+            "symmetric": True,
+            "type": "float",
+            "zp_dtype": None,
+        }
+        print("[cfg] group_0.input_activations restored (FP8 dynamic group)")
 
-    # (3) scale_fmt
-    if not qc.get("scale_fmt"):
-        qc["scale_fmt"] = "ue8m0"
-        print("[cfg] quantization_config.scale_fmt = ue8m0")
+    # (3) scale_fmt: ue8m0 is set by llm-compressor; predecessor has it
+    # absent. Both should work, but match predecessor for safety.
+    if "scale_fmt" in qc:
+        del qc["scale_fmt"]
+        print("[cfg] scale_fmt removed (matching predecessor)")
 
     json.dump(cfg, open(cfg_p, "w"), indent=2)
     print(f"[cfg] wrote {cfg_p}")
