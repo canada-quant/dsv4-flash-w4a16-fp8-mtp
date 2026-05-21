@@ -395,27 +395,40 @@ def main():
     # entries below make it explicit: any path starting with `mtp.` is
     # excluded from both quantization groups, regardless of whether it
     # would otherwise match the attn or expert target regex.
+    # CRITICAL: targets= must be anchored at `model.layers.\d+.` so MTP paths
+    # (model.mtp.0.*) are NOT matched. The `ignore=re:.*mtp\..*` below is
+    # belt-and-suspenders for GPTQ calibration, but compressed_tensors's
+    # save_pretrained wrapper does NOT consult `ignore=` at save time — it
+    # only checks targets=. So if targets uses unanchored `.*mlp\.experts\.`
+    # patterns (matching both main and MTP), MTP experts get RTN-quantized
+    # at save regardless of the ignore list. The first smoke iter 7 confirmed
+    # this: subgraph 43 (MTP) was empty during GPTQ (ignore worked), but the
+    # saved artifact had `model.mtp.0.mlp.experts.0.down_proj.weight_packed`
+    # in int4 anyway. Fix: anchor targets at `model\.layers\.\d+\.`.
     recipe = GPTQModifier(
         config_groups={
             "attention": QuantizationScheme(
                 targets=[
-                    r"re:.*self_attn\.(q_a_proj|q_b_proj|kv_proj|o_a_proj|o_b_proj)$",
-                    r"re:.*self_attn\.compressor\.(gate_proj|kv_proj)$",
-                    r"re:.*self_attn\.compressor\.indexer\.(gate_proj|kv_proj|q_b_proj|weights_proj)$",
+                    r"re:^model\.layers\.\d+\.self_attn\.(q_a_proj|q_b_proj|kv_proj|o_a_proj|o_b_proj)$",
+                    r"re:^model\.layers\.\d+\.self_attn\.compressor\.(gate_proj|kv_proj)$",
+                    r"re:^model\.layers\.\d+\.self_attn\.compressor\.indexer\.(gate_proj|kv_proj|q_b_proj|weights_proj)$",
                 ],
                 **FP8_BLOCK,
             ),
             "experts": QuantizationScheme(
                 targets=[
-                    r"re:.*mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$",
+                    r"re:^model\.layers\.\d+\.mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$",
                 ],
                 **W4A16,
             ),
         },
         ignore=[
             "lm_head",
-            # MTP draft head: keep BF16 to preserve speculative-decoding
-            # acceptance rate. See recipe comment above for rationale.
+            # MTP draft head: defense-in-depth ignore for GPTQ calibration.
+            # The targets= regexes above already anchor at `model.layers.`
+            # so MTP is excluded by construction; this entry keeps the
+            # design choice visible in the recipe even if targets= ever
+            # gets loosened.
             r"re:.*mtp\..*",
         ],
         offload_hessians=True,   # required — see predecessor phase3b-recovery.md
