@@ -41,6 +41,45 @@ def needs_mtp_embed_rename(name: str) -> str | None:
     return f"mtp.{m.group(1)}.emb.tok_emb.weight"
 
 
+def restore_source_only_config_keys(
+    artifact_dir: Path, source_dir: Path
+) -> None:
+    """save_pretrained strips fields the transformers DSv4 Config class
+    doesn't model, but vLLM's deepseek_v4 reads several of them directly.
+    Specifically (observed on smoke iter 8):
+
+      - compress_ratios: list[int] (length 44; per-layer compress factor).
+        vLLM raises AttributeError(`'DeepseekV4Config' object has no
+        attribute 'compress_ratios'. Did you mean: 'compress_rates'?`)
+        without it. transformers uses compress_rates (dict) which the
+        Config models, so save_pretrained kept that one and dropped
+        compress_ratios (list).
+      - num_hash_layers, rope_scaling, torch_dtype: also dropped at save,
+        also referenced by vLLM/transformers in various code paths.
+
+    Strategy: union the source bf16-mtp config.json keys into the artifact
+    config.json, keeping the artifact's value on any conflict (so the
+    quantization_config additions stay intact, and we only add what was
+    silently dropped).
+    """
+    cfg_p = artifact_dir / "config.json"
+    src_cfg_p = source_dir / "config.json"
+    if not src_cfg_p.exists():
+        print(f"[restore] no source config at {src_cfg_p}, skipping")
+        return
+    src = json.load(open(src_cfg_p))
+    dst = json.load(open(cfg_p))
+    added = []
+    for k in sorted(set(src.keys()) - set(dst.keys())):
+        dst[k] = src[k]
+        added.append(k)
+    if added:
+        json.dump(dst, open(cfg_p, "w"), indent=2)
+        print(f"[restore] added source-only keys: {added}")
+    else:
+        print("[restore] no source-only keys to add")
+
+
 def patch_config(artifact_dir: Path) -> None:
     cfg_p = artifact_dir / "config.json"
     cfg = json.load(open(cfg_p))
@@ -137,6 +176,7 @@ def main():
         raise FileNotFoundError(artifact_dir)
 
     print(f"=== Post-processing {artifact_dir} ===")
+    restore_source_only_config_keys(artifact_dir, Path(args.bf16_source))
     patch_config(artifact_dir)
     rename_mtp_embed_in_safetensors(artifact_dir)
     copy_tokenizer_files(artifact_dir, Path(args.bf16_source))

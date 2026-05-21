@@ -53,9 +53,11 @@ nohup vllm serve "$MODEL_PATH" \
 SERVE_PID=$!
 echo "[option-b] vllm PID=$SERVE_PID, log at /tmp/vllm_optionb.log"
 
-# Wait for /health with 5-min timeout
-echo "[option-b] waiting for /health (max 5 min)..."
-deadline=$(($(date +%s) + 300))
+# Wait for /health with 15-min timeout (vLLM cold-load of 156GB W4A16+FP8 model
+# into TP=2 ran ~7-8 min in the smoke iter 8 dry-run; predecessor docs suggest
+# even longer at higher TP. 15 min is comfortable headroom.)
+echo "[option-b] waiting for /health (max 15 min)..."
+deadline=$(($(date +%s) + 900))
 until curl -fsS "http://localhost:$PORT/health" >/dev/null 2>&1; do
     if [ $(date +%s) -gt $deadline ]; then
         echo "[option-b] FAIL — /health never returned 200 in 5 min"
