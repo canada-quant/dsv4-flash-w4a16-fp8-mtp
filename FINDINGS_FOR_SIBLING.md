@@ -517,3 +517,101 @@ separate PR).
 
 Phase 2 full launch is BLOCKED on this. Mandatory check-in with user
 before continuing.
+
+---
+
+## Update 2026-05-21 — pivot to H200, smoke iter 7 + iter 8
+
+After the diagnostics above, we pivoted off B300 to a single
+`p5en.48xlarge` (8× H200) box in us-east-2. Hardware family matches
+the predecessor's, so the secondary hang in `compress_module_list`
+disappeared once we ran the predecessor's HF auto-offload pattern
+instead of the decoupled shard. **Net: the `multirank_patches.py`
+file is no longer the long pole — the H200 path uses replicated
+experts via `from_pretrained(device_map="auto")` and the GPTQ
+collectives don't have the disjoint-module problem.**
+
+This whole class of issues evaporates on B300 too if the sibling can
+get HF auto-offload to fit in DDR (predecessor needs ~2.5TB DDR, and
+B300 has the same). Worth re-checking before the sibling spends more
+time on `multirank_patches.py`.
+
+### Bug N3 — `ignore=` honored at GPTQ calibration but NOT at save
+
+The new one. Filed as
+[`vllm-project/compressed-tensors#712`](https://github.com/vllm-project/compressed-tensors/issues/712)
+on 2026-05-21.
+
+**Symptom:** recipe has `ignore=[r"re:.*mtp\..*"]`. GPTQ calibration
+correctly excludes MTP from Hessian construction (subgraph 43, the
+MTP one, is empty — 0 modules processed). But the saved artifact has
+`model.mtp.0.mlp.experts.*.weight_packed` (W4A16-quantized) anyway.
+The save path's RTN-style compression in
+`llmcompressor/transformers/compression/compressed_tensors_utils.py`
+(the `Compressing model: 0/N` progress bar) consults only `targets=`,
+NOT `ignore=`.
+
+**Workaround for both workstreams:** anchor `targets=` so MTP paths
+don't match in the first place. Don't rely on `ignore=` alone:
+
+```python
+# WRONG — MTP gets quantized at save despite ignore
+targets=[r"re:.*mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"]
+ignore=[r"re:.*mtp\..*"]
+
+# RIGHT — MTP paths can't match the targets pattern
+targets=[r"re:^model\.layers\.\d+\.mlp\.experts\.\d+\.(gate_proj|up_proj|down_proj)$"]
+ignore=[r"re:.*mtp\..*"]  # belt-and-suspenders, kept for visibility
+```
+
+The leading `^model\.layers\.\d+\.` anchor is what does the work.
+`re:.*` matches `model.mtp.0.mlp.experts.*` too — anchoring forbids it.
+
+**Critical for NVFP4 sibling:** your recipe almost certainly has the
+same shape — `targets=re:.*mlp\.experts\.*` with `ignore=mtp.*` — so
+your saved artifact will silently ship a quantized MTP block too,
+and your speculative-decoding acceptance rate will be ruined. **Audit
+your `targets=` regex before save, or you'll need to rerun calibration.**
+
+How to detect post-hoc on a saved artifact:
+
+```python
+import json
+with open("model.safetensors.index.json") as f:
+    wm = json.load(f)["weight_map"]
+mtp_quantized = [k for k in wm if "mtp" in k and "weight_packed" in k]
+mtp_quantized_scales = [k for k in wm if "mtp" in k and ".weight_scale" in k]
+assert not mtp_quantized, f"MTP got quantized at save: {len(mtp_quantized)} packed weights"
+assert not mtp_quantized_scales, f"MTP got quantized at save: {len(mtp_quantized_scales)} scales"
+```
+
+If both lists are empty, MTP shipped clean. If either has entries,
+the recipe's `targets=` matched MTP paths — fix the regex and rerun.
+
+### Status of smoke iter 8
+
+Currently in flight on H200 (PID 143471). If it produces an artifact
+where `mtp_quantized == []`, that confirms the targets=-anchor fix
+works and we go to Phase 2 full calibration. ETA ~3h from 2026-05-21
+06:35 UTC.
+
+---
+
+## Option Y design rationale (for both repos' model cards)
+
+Whether the artifact is W4A16+FP8_BLOCK or NVFP4+FP8_BLOCK, the **MTP
+block stays at BF16**. The reasoning is identical:
+
+- MTP is the speculative-decoding draft head.
+- Decode throughput speedup from MTP depends on token-acceptance-rate
+  by the main verifier — quantization noise in the draft destroys
+  acceptance and kills the speedup.
+- The MTP block is small (~13 GB at BF16 vs ~3.3 GB at W4A16 ≈ 7%
+  artifact overhead) but its quality impact on the speedup factor
+  (1.8x at `num_speculative_tokens=2`) is disproportionate.
+- DeepSeek's own native release also leaves MTP at higher precision
+  than the main routed-expert tensors.
+
+So `ignore=[..., r"re:.*mtp\..*"]` is the design principle for both
+this repo and the sibling, but it has to actually fire at save time —
+hence Bug N3 matters.

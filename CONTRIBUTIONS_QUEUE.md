@@ -29,6 +29,14 @@ maintainers comment on direction before the PR lands.
 
 ## Active candidates
 
+### C10 🔴 — `compressed-tensors`: `ignore=` honored at calibration but NOT at save
+
+- **Upstream:** `vllm-project/compressed-tensors`
+- **Issue:** https://github.com/vllm-project/compressed-tensors/issues/712 (filed 2026-05-21)
+- **Discovered while** verifying smoke iter 7's saved artifact. GPTQ calibration honored `ignore=re:.*mtp\..*` (subgraph 43 was empty), but the save_pretrained_wrapper's RTN-style compression re-packed MTP experts to W4A16 anyway because it only checks `targets=`, not `ignore=`.
+- **Workaround in our recipe:** anchor `targets=` at `^model\.layers\.\d+\.` so MTP paths don't match in the first place. Belt-and-suspenders `ignore=` entry kept for visibility.
+- **Brand-building angle:** this is the kind of mixed-precision-recipe failure mode that affects any speculative-decoding artifact (Eagle, Medusa, DSv4 MTP). Filing it makes it cheaper for the next person.
+
 ### C9 🔴 — `huggingface/transformers`: conversion_mapping doesn't cover mtp.* paths
 
 - **Upstream:** `huggingface/transformers`
