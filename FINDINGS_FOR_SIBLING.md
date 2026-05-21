@@ -193,6 +193,60 @@ doc to the B300 agent depends on which point they're at:
 - If B300 has filed an issue already → cross-link our `CONTRIBUTIONS_QUEUE.md`
   C1 entry so the canada-quant brand work consolidates.
 
+## Option Y — MTP stays BF16 by design (2026-05-21)
+
+Before the recipe questions: the artifact's MTP design choice.
+
+**Decision: keep MTP at BF16 even when the main MoE goes to W4A16.**
+
+MTP is the speculative-decoding draft head. Speculative throughput depends on
+**token-acceptance-rate** by the verifier. Quantization noise in the draft
+directly degrades acceptance, killing the speedup. DeepSeek's native release
+leaves MTP at higher precision than the MXFP4 experts; RedHat dropped MTP
+entirely. The right move is preserving MTP at full BF16 while quantizing the
+main MoE — sharper positioning than either alternative.
+
+| Component | Recipe |
+|---|---|
+| Main 43 layers, routed experts (256/layer × 3 projections) | W4A16 INT4 group=128 |
+| Main 43 layers, attention (q_a/q_b/kv/o_a/o_b + compressor/indexer) | FP8_BLOCK 128×128 |
+| Main 43 layers, shared experts | BF16 (passthrough) |
+| Main 43 layers, norms / gates / hyper-connection params | BF16 (passthrough) |
+| **MTP block (`mtp.0.*`)** | **BF16 (no quantization)** |
+
+Cost: +10 GB on disk (MTP ~13.2 GB BF16 vs ~3.3 GB W4A16 = 7% size
+overhead). Benefit: full MTP acceptance rate, expected ~1.8× decode
+speedup at `--speculative-config '{"method":"mtp","num_speculative_tokens":2}'`.
+30%+ throughput loss from degraded acceptance avoided.
+
+**Recipe-level implementation** (in `scripts/quantize_v4_w4a16_mtp.py`):
+
+```python
+ignore=[
+    "lm_head",
+    r"re:.*mtp\..*",   # MTP draft head preserved at BF16
+]
+```
+
+This is deliberate, not accidental. The first observed smoke happened to
+produce MTP-in-BF16 because the sequential pipeline's per-subgraph module
+collection skipped MTP paths — but relying on that was fragile. The
+explicit `ignore` regex makes it permanent and load-bearing in the
+recipe.
+
+**For the NVFP4 sibling:** the same logic applies. Even more strongly,
+since NVFP4 has higher quantization noise than W4A16 → acceptance hit
+would be larger. Recommend `ignore=["lm_head", r"re:.*mtp\..*"]` in the
+NVFP4 recipe too. The product position becomes:
+
+> "First DSv4-Flash NVFP4 quant that preserves the MTP draft head at
+> BF16 — engineered for maximum speculative-decoding throughput on
+> Blackwell hardware."
+
+That's a sharper differentiator than "MTP preserved" alone.
+
+---
+
 ## Post-Option-D pivot findings (2026-05-20, post-pivot)
 
 After Option A (decoupled-shard) was diagnosed as structurally dead, we

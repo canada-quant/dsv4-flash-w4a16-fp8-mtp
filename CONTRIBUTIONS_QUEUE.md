@@ -1,5 +1,16 @@
 # Contributions queue — canada-quant
 
+> **Design choice driving the artifact (2026-05-21):** the artifact's MTP
+> draft block is preserved at **BF16** while the main 43 layers' routed
+> experts go to W4A16 (FP8_BLOCK on attention). This is a deliberate
+> mixed-precision recipe — speculative-decoding acceptance rate matters
+> more than the ~7% size delta from preserving MTP at higher precision.
+> See `model-card-draft.md` "Why MTP stays BF16" for the full rationale,
+> and `FINDINGS_FOR_SIBLING.md` "Option Y — MTP stays BF16 by design"
+> for the cross-pollination message to the NVFP4 sibling.
+
+
+
 Running index of upstream issues / PRs / bug reports waiting to be filed from
 diagnostic work in this repo. Add to the bottom as new findings surface.
 
