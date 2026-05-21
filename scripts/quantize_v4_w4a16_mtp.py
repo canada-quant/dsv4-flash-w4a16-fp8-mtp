@@ -54,6 +54,23 @@ install_mtp_shim()
 # the load. Extending after that point is too late.
 install_mtp_conversion_mapping_extension()
 
+# dtype handling: norms in DSv4 ship as fp32 (per HF default
+# `_keep_in_fp32_modules_strict` heuristic). Their fp32 output then feeds
+# bf16 Linear weights inside the block forward, hitting:
+#   RuntimeError: expected mat1 and mat2 to have the same dtype, ...
+# The kylesayrs canonical example fixes this by setting
+# `_keep_in_fp32_modules_strict = set()` BEFORE from_pretrained — but on
+# our transformers 5.8.1 + load_offloaded_model stack, that change triggers
+# a completely different device_map inference code path that bypasses our
+# MTP shim and conversion mapping (empty `_keep_in_fp32_modules_strict`
+# pushes us through `_init_infer_auto_device_map` which loads via a
+# different mechanism that doesn't see our patches).
+#
+# Workaround: leave `_keep_in_fp32_modules_strict` alone during load
+# (norms ship as fp32 — load completes correctly with our shim), then
+# AFTER from_pretrained returns, cast any fp32 params to bf16 inline.
+# This is a one-shot cast over the model's param tree (~few seconds).
+
 # MODULE-level imports required for compressed_tensors.offload.load_offloaded_model:
 # its _get_caller_frame() walks frame.f_globals to find AutoModelForCausalLM (a
 # _BaseAutoModelClass subclass), and patches from_pretrained on it. If the
@@ -159,13 +176,58 @@ def main():
     from llmcompressor.modeling.moe.linearize import load_linearized_moe
     from llmcompressor.modifiers.quantization import GPTQModifier
 
+    # ---- compat shim: update_offload_parameter signature skew ------------
+    # llm-compressor f2aa32e2's gptq/base.py:321 calls
+    # `update_offload_parameter(module, name, data, source_rank=dist.get_rank())`
+    # but compressed-tensors 0.15.1a20260515 only accepts (module, name, data).
+    # Wrap to swallow the unknown source_rank kwarg. Carried forward from
+    # the previous Option A script (see memory:gptq_dryrun_friction item #3).
+    import compressed_tensors.utils.offload as _ct_offload
+    import llmcompressor.modifiers.gptq.base as _gptq_base
+    _orig_uop = _ct_offload.update_offload_parameter
+    def _uop_compat(module, name, data, source_rank=None, **kwargs):
+        return _orig_uop(module, name, data)
+    _ct_offload.update_offload_parameter = _uop_compat
+    # rebind on the gptq module too (it imported the symbol at module load)
+    if hasattr(_gptq_base, "update_offload_parameter"):
+        _gptq_base.update_offload_parameter = _uop_compat
+
     from scripts.gptq_checkpoint import (
         install_subgraph_checkpoint_hook,
         list_completed_subgraphs,
     )
 
     # ---- distributed init with predecessor's NCCL settings ----------------
-    init_dist()
+    # compressed_tensors.offload.init_dist calls dist.init_process_group() with
+    # NO `timeout=` arg — uses PyTorch's 10-min default. For DSv4-Flash's
+    # load_offloaded_model path, the from_accelerate conversion does a
+    # broadcast_object_list AFTER rank 0 finishes the full file read +
+    # _init_weights pass. The full load can exceed 10 min, hitting a NCCL
+    # watchdog timeout (WorkNCCL OpType=BROADCAST Timeout(ms)=600000).
+    # Pre-init the process group with a 2-hour timeout so init_dist's
+    # call is a no-op (it skips init if dist.is_initialized()).
+    if "TORCHELASTIC_RUN_ID" in os.environ:
+        import datetime as _dt
+        if not dist.is_initialized():
+            _rank = int(os.environ["RANK"])
+            _local_rank = int(os.environ["LOCAL_RANK"])
+            _world_size = int(os.environ["WORLD_SIZE"])
+            _device = torch.device(f"cuda:{_local_rank}")
+            torch.cuda.set_device(_device)
+            dist.init_process_group(
+                backend="nccl",
+                init_method="env://",
+                rank=_rank,
+                world_size=_world_size,
+                device_id=_device,
+                timeout=_dt.timedelta(hours=2),
+            )
+            dist.barrier()
+        # NOTE: don't call init_dist() — it would re-init unconditionally
+        # and fail with "already initialized". We've done the init above.
+    else:
+        # Single-rank fallback: let init_dist() do its thing (it'll raise if no env)
+        init_dist()
     rank = dist.get_rank() if dist.is_initialized() else 0
     world_size = dist.get_world_size() if dist.is_initialized() else 1
     is_main = rank == 0
@@ -200,6 +262,24 @@ def main():
             )
     if is_main:
         print(f"[quant] model loaded in {time.time()-t0:.1f}s", flush=True)
+
+    # ---- 1.3 dtype unification (norms loaded as fp32, model is bf16) ------
+    # See module-level docstring above the imports for why this is done here
+    # instead of via `_keep_in_fp32_modules_strict = set()` pre-load. The cast
+    # happens in-place on each parameter; offloaded params are onloaded by
+    # accelerate's hook system when we touch `.data`, so this is safe even
+    # under auto_offload device_map.
+    fp32_cast_count = 0
+    for name, p in model.named_parameters():
+        if p.dtype == torch.float32:
+            with torch.no_grad():
+                p.data = p.data.to(torch.bfloat16)
+            fp32_cast_count += 1
+    for name, b in model.named_buffers():
+        if b.dtype == torch.float32:
+            b.data = b.data.to(torch.bfloat16)
+    if is_main:
+        print(f"[dtype] cast {fp32_cast_count} fp32 params to bf16", flush=True)
 
     # ---- 1.4 MTP tensor-value verification (mandatory) ------------------
     # Catches silent random-init regressions where the module count looks
@@ -288,16 +368,33 @@ def main():
         )
     ds = ds.map(tokenize, remove_columns=ds.column_names)
 
-    # ---- 3. GPTQ recipe (predecessor's, verbatim, plus MTP-aware regex) --
-    # Predecessor recipe: FP8_BLOCK attention + W4A16 routed experts,
-    # everything else BF16. transformers post-rename names (`self_attn.q_a_proj`,
-    # `mlp.experts.X.gate_proj`) are what llmcompressor sees during calibration
-    # after `load_linearized_moe` + `register_checkpoint_conversion_mapping`
-    # have done their renames.
+    # ---- 3. GPTQ recipe — deliberate mixed-precision with BF16 MTP -------
+    # Recipe topology:
+    #   Main 43 decoder layers:
+    #     - attention projections + compressor/indexer → FP8_BLOCK
+    #     - routed-expert MLP (256 experts × 3 projections) → W4A16
+    #   MTP draft block (`mtp.0.*`):
+    #     - ALL params preserved at BF16 (no quantization)
     #
-    # MTP-aware: the regexes use `.*` so they match both `model.layers.X.*`
-    # and `model.mtp.X.*` paths. No regex changes needed beyond that — the
-    # `*` after `re:` is enough to match the MTP prefix too.
+    # Why MTP stays BF16:
+    #
+    # MTP is the speculative-decoding draft head. Speculative throughput
+    # depends on token-acceptance-rate by the verifier — a small precision
+    # delta in the draft directly degrades acceptance. DeepSeek's native
+    # release leaves MTP at higher precision than the MXFP4 experts; RedHat
+    # dropped MTP entirely. We preserve MTP at full BF16 precision while
+    # quantizing the main MoE.
+    #
+    # Cost: ~10 GB more on disk (MTP ~13.2 GB BF16 vs ~3.3 GB W4A16).
+    # Benefit: full MTP acceptance-rate, expected ~1.8× decode speedup at
+    # `--speculative-config '{"method":"mtp","num_speculative_tokens":2}'`.
+    # 7% size overhead vs potentially 30%+ throughput loss from degraded
+    # acceptance — overwhelmingly worth it.
+    #
+    # This is a deliberate design choice, not accidental. The `ignore=`
+    # entries below make it explicit: any path starting with `mtp.` is
+    # excluded from both quantization groups, regardless of whether it
+    # would otherwise match the attn or expert target regex.
     recipe = GPTQModifier(
         config_groups={
             "attention": QuantizationScheme(
@@ -315,7 +412,12 @@ def main():
                 **W4A16,
             ),
         },
-        ignore=["lm_head"],
+        ignore=[
+            "lm_head",
+            # MTP draft head: keep BF16 to preserve speculative-decoding
+            # acceptance rate. See recipe comment above for rationale.
+            r"re:.*mtp\..*",
+        ],
         offload_hessians=True,   # required — see predecessor phase3b-recovery.md
         dampening_frac=0.1,
     )
@@ -350,6 +452,23 @@ def main():
         print(f"[quant] oneshot done in {(time.time()-t_oneshot)/3600:.2f}h", flush=True)
 
     # ---- 6. save -----------------------------------------------------------
+    # Pre-save: undo the MTP shim's config-list extension. The shim added one
+    # extra entry to layer_types and mlp_layer_types so DeepseekV4Attention
+    # and DeepseekV4SparseMoeBlock could index by layer_idx for the MTP block
+    # (whose layer_idx == num_hidden_layers). But
+    # `transformers.models.deepseek_v4.configuration_deepseek_v4.validate_layer_type`
+    # asserts `len(layer_types) == num_hidden_layers`. We truncate back so
+    # `config.save_pretrained()` validates clean. The MTP `mtp.0.*` weights
+    # are already in the model artifact; the saved config doesn't need to
+    # carry a layer_type entry for them (transformers' load path doesn't
+    # re-index by layer_idx for MTP — it uses our shim or the upstream PR
+    # #46127's `DeepseekV4NextNPredictor` class).
+    cfg = model.config
+    nhl = cfg.num_hidden_layers
+    if getattr(cfg, "layer_types", None) is not None and len(cfg.layer_types) > nhl:
+        cfg.layer_types = list(cfg.layer_types)[:nhl]
+    if getattr(cfg, "mlp_layer_types", None) is not None and len(cfg.mlp_layer_types) > nhl:
+        cfg.mlp_layer_types = list(cfg.mlp_layer_types)[:nhl]
     if is_main:
         print(f"[quant] saving to {args.output}...", flush=True)
         t_save = time.time()
