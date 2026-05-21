@@ -536,6 +536,70 @@ get HF auto-offload to fit in DDR (predecessor needs ~2.5TB DDR, and
 B300 has the same). Worth re-checking before the sibling spends more
 time on `multirank_patches.py`.
 
+### Bug N4 — recipe targets= must match vLLM's INTERNAL naming, not HF
+
+Found while running Option B serve smoke on the iter 8 artifact. Symptom:
+vLLM raises `torch.OutOfMemoryError: Tried to allocate 4.00 GiB. GPU has
+1.05 GiB free` during `make_layers` (line 646 of
+`vllm/model_executor/models/utils.py`). At the time of the OOM the model
+weights aren't even loaded yet — we're still in `__init__` allocating
+empty tensors.
+
+Root cause: vLLM's compressed-tensors scheme resolution in
+`vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors_moe/compressed_tensors_moe.py:get_moe_method`:
+
+```python
+unfused_names = [
+    layer_name + proj_name
+    for proj_name in [".0.gate_proj", ".0.up_proj", ".0.down_proj"]
+]
+all_scheme_dicts = [
+    quant_config.get_scheme_dict(layer, name) for name in unfused_names
+]
+scheme_dict = all_scheme_dicts.pop()
+...
+if scheme_dict is None:  # ignored layer
+    return UnquantizedFusedMoEMethod(layer.moe_config)
+```
+
+vLLM probes `layer_name + ".0.gate_proj"` against `targets=`. Our
+recipe wrote targets with HF-renamed paths
+(`model.layers.X.mlp.experts.Y.gate_proj`), but `vllm.models.deepseek_v4`
+uses UPSTREAM naming internally:
+
+- `prefix=f"{prefix}.ffn"` (model.py:1012) → MoE layer is
+  `model.layers.X.ffn` (NOT `mlp`)
+- `prefix=f"{prefix}.experts"` (model.py:751) → experts get
+  `model.layers.X.ffn.experts`
+- `prefix=f"{prefix}.attn"` (model.py:1008) → attention is
+  `model.layers.X.attn` (NOT `self_attn`)
+
+So our `re:.*mlp\.experts\.\d+\.(gate_proj|...)$` doesn't match
+`model.layers.0.ffn.experts.0.w1` → unquantized fallback →
+~80GB per GPU for what should have been ~20GB W4A16 → OOM.
+
+**Fix:** rewrite targets at postprocess time to predecessor's broad
+pattern that matches both naming conventions:
+
+```python
+group_0: r"re:.*attn\.(wq_a|wq_b|wkv|wo_a|wo_b|fused_wqa_wkv|q_a_proj|q_b_proj|kv_proj|o_a_proj|o_b_proj)$"
+group_1: r"re:.*experts\.\d+\.(w1|w2|w3|gate_proj|up_proj|down_proj|gate_up_proj)$"
+```
+
+**Critical for NVFP4 sibling:** your recipe also writes HF names in
+targets= (whatever your equivalent is). Without a postprocess rewrite,
+your saved artifact will ALSO fall back to UnquantizedFusedMoEMethod at
+serve. You will see the same OOM signature. Apply the same broad pattern
+in your postprocess (NVFP4 group_0 also needs both naming).
+
+Detection at the saved artifact: run `vllm serve ... --max-model-len
+1024` (small) and watch for the OOM. If it fires with "Tried to allocate
+4 GiB" while >130 GiB is "in use" before any weights have loaded, you
+have this bug. Fix at the config level, no recalibration needed.
+
+The fix is now landed in `scripts/postprocess_for_vllm.py:patch_config`
+in commit `45e580e`.
+
 ### Bug N3 — `ignore=` honored at GPTQ calibration but NOT at save
 
 The new one. Filed as
