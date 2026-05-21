@@ -33,6 +33,18 @@ from safetensors.torch import save_file
 
 MTP_EMBED_OLD = re.compile(r"^mtp\.(\d+)\.embed\.weight$")
 
+# transformers' save_pretrained expands the main model's hc_head_*
+# top-level params into a `model.hc_head` submodule, writing them as
+# `model.hc_head.hc_base|hc_fn|hc_scale`. vLLM's DeepseekV4Model expects
+# them at the top level as `hc_head_base|hc_head_fn|hc_head_scale` and
+# its conversion mapping `{"hc_head": "model.hc_head"}` then targets
+# `model.hc_head_base|fn|scale`. Flatten back to the vLLM-expected form.
+HC_HEAD_RENAMES = {
+    "model.hc_head.hc_base":  "model.hc_head_base",
+    "model.hc_head.hc_fn":    "model.hc_head_fn",
+    "model.hc_head.hc_scale": "model.hc_head_scale",
+}
+
 
 def needs_mtp_embed_rename(name: str) -> str | None:
     m = MTP_EMBED_OLD.match(name)
@@ -219,6 +231,52 @@ def rename_mtp_embed_in_safetensors(artifact_dir: Path) -> None:
     print(f"[mtp-rename] updated index")
 
 
+def rename_hc_head_in_safetensors(artifact_dir: Path) -> None:
+    """Flatten `model.hc_head.{hc_base|hc_fn|hc_scale}` ->
+    `model.hc_head_{base|fn|scale}` in the safetensors shards + index.
+
+    transformers' save_pretrained writes the main hyperconnection-head
+    params under a submodule path, but vLLM's DeepseekV4Model has them
+    as top-level params (`hc_head_base`, `hc_head_fn`, `hc_head_scale`)
+    and its `{"hc_head": "model.hc_head"}` conversion mapping then
+    expects the safetensors keys to be `model.hc_head_*` (flat).
+    Without this flatten, vLLM raises KeyError('hc_head.hc_base') at
+    load_weights time (root cause of attempt 7 failure).
+    """
+    index_p = artifact_dir / "model.safetensors.index.json"
+    if not index_p.exists():
+        print(f"[hc-rename] no index at {index_p}, skipping")
+        return
+    index = json.load(open(index_p))
+    wmap = index["weight_map"]
+
+    shards_to_patch: dict[str, list[tuple[str, str]]] = {}
+    for old, new in HC_HEAD_RENAMES.items():
+        if old in wmap:
+            shards_to_patch.setdefault(wmap[old], []).append((old, new))
+
+    if not shards_to_patch:
+        print("[hc-rename] no model.hc_head.* keys to rename")
+        return
+
+    for shard, renames in shards_to_patch.items():
+        sp = artifact_dir / shard
+        print(f"[hc-rename] {shard}: {renames}")
+        tensors = {}
+        with safe_open(sp, framework="pt") as f:
+            for k in f.keys():
+                tensors[k] = f.get_tensor(k)
+        rm = dict(renames)
+        new_tensors = {rm.get(k, k): v for k, v in tensors.items()}
+        save_file(new_tensors, str(sp))
+
+    for old, new in HC_HEAD_RENAMES.items():
+        if old in wmap:
+            wmap[new] = wmap.pop(old)
+    json.dump(index, open(index_p, "w"), indent=2)
+    print("[hc-rename] updated index")
+
+
 def copy_tokenizer_files(artifact_dir: Path, source_dir: Path) -> None:
     if not source_dir.exists():
         print(f"[tokenizer] source dir {source_dir} missing, skipping")
@@ -247,6 +305,7 @@ def main():
     restore_source_only_config_keys(artifact_dir, Path(args.bf16_source))
     patch_config(artifact_dir)
     rename_mtp_embed_in_safetensors(artifact_dir)
+    rename_hc_head_in_safetensors(artifact_dir)
     copy_tokenizer_files(artifact_dir, Path(args.bf16_source))
     print("=== DONE ===")
 
