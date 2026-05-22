@@ -43,7 +43,7 @@ No separate `/data` EBS this time — there's no second persistent disk by defau
 - For risky/expensive actions (HF upload, force-push, instance termination), confirm before executing.
 - `aws --profile rozo --region us-east-2 ...` for AWS calls against the H200 box. (Profile `rozo`; region changed from `us-west-2` on the retired B300 box.)
 - Commit messages: include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` at the bottom (multiline form via heredoc, not `git commit -m`-with-flags).
-- The repo is **PRIVATE** at `github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp`. Do not publish until the user explicitly authorizes Phase 8.
+- The repo is **PUBLIC** at `github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp` (flipped public 2026-05-22 alongside the canonical HF artifact `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP`). The smoke fallback at `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP-smoke-dryrun` stays private — that's the iter 9 67.9%-acceptance backup, NOT the shipping artifact.
 
 ## What's where in the repo
 
