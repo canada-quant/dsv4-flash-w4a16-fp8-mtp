@@ -1,0 +1,9 @@
+PASS math_7_times_8: matched expectation
+  content: The product of 7 and 8 is 56.
+PASS capital_of_france: matched expectation
+  content: The capital of France is **Paris**.
+PASS spanish_greeting: matched expectation
+  content: The most common way to say "hello" in Spanish is **"Hola"** (pronounced *OH-lah*).  It's a universal greeting suitable for almost any situation, whether formal or informal.
+PASS openclaw_read_tool: matched expectation
+  content:   I'll check the state and compile a summary of yesterday for you.  
+  tool_calls: ['read']

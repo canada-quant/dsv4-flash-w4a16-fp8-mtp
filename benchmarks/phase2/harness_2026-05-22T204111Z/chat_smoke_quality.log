@@ -1,0 +1,8 @@
+PASS writing_follow_instructions: matched expectation
+  content: **The Tradeoffs of Running Large Language Models Locally**  **Context:**   Running a large language model (LLM) on your own hardware—rather than relying on cloud APIs—offers independent control. However, this choice involves a series of compromises between performance, cost, priv
+PASS writing_quality_user_report_zh: matched expectation
+  content: ### 在本地部署大语言模型的收益与代价  #### 背景  过去一年，大语言模型（LLM）以API形式融入开发流程的场景迅速普及。许多团队发现，数据上传到第三方服务、推理延迟不可控、以及每次查询按token计费的模式，在一些对数据主权、实时性与成本有严格要求的业务场景中显得“水土不服”。这促使工程负责人重新审视一个选择：是否将模型部署到内部基础设施上？本地部署并非全新概念，但在LLM时代，它带来的不仅是“公司防火墙内运行的API”的简单变化，更涉及整个技术栈、团队能力与运维文化的调整。在决定之前，我们需要冷静审视其真实收益与隐藏代价。  #### 收益
+PASS translation_quality_en_to_zh: matched expectation
+  content: 在本地运行大型语言模型可以增强隐私保护并降低延迟，但这种模式会将运维责任转移给团队。实际的问题不在于本地推理是否令人惊艳，而在于组织能否承担硬件维护、质量监控以及迭代速度放缓所带来的成本。
+PASS translation_quality_zh_to_en: matched expectation
+  content: Deploying large language models on-premises is not simply a matter of downloading weights onto a server. It places privacy, latency, and controllability into the hands of the team, while also transforming capacity planning, model upgrades, fault diagnosis, and quality evaluation 

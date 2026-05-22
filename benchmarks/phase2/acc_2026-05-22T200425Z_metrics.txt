@@ -1,0 +1,17 @@
+timestamp: 2026-05-22T200425Z
+num_prompts: 200
+max_concurrency: 1
+num_speculative_tokens: 1
+artifact: /scratch/weights/w4a16-fp8-mtp-gptq
+
+pre_draft: 0.0
+pre_accepted: 0.0
+pre_pos0: 0.0
+post_draft: 30058.0
+post_accepted: 21024.0
+post_pos0: 21024.0
+delta_draft: 30058
+delta_accepted: 21024
+delta_pos0: 21024
+acceptance_rate: 0.6994
+acceptance_rate_pos0: 0.6994

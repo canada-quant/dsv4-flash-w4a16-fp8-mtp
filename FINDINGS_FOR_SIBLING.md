@@ -741,3 +741,164 @@ block stays at BF16**. The reasoning is identical:
 So `ignore=[..., r"re:.*mtp\..*"]` is the design principle for both
 this repo and the sibling, but it has to actually fire at save time —
 hence Bug N3 matters.
+
+## Update 2026-05-22 — two new bugs surfaced debugging 0% MTP acceptance
+
+### C13 — `transformers.save_pretrained` silently downcasts FP32 to BF16
+
+**Symptom:** the DeepSeek-V4-Flash release spec keeps several tensor
+groups at FP32 for numerical precision:
+
+- `hc_attn_{base,fn,scale}` per layer (hyper-connection plumbing)
+- `hc_ffn_{base,fn,scale}` per layer
+- `hc_head_{base,fn,scale}` (global + MTP)
+- `*.attn.attn_sink`
+- `*.ffn.gate.bias` (formerly `e_score_correction_bias`)
+- `*.attn.compressor.ape` (formerly `position_bias`)
+- `*.attn.indexer.compressor.ape` (formerly `position_bias`)
+
+`transformers.save_pretrained` (5.8.1) writes them as BF16 if the
+PreTrainedModel's `torch_dtype` is BF16 — even though the source
+checkpoint had them FP32. This is silent — no warning, no error.
+
+**Evidence:** loaded source `/scratch/weights/bf16-mtp` via safetensors,
+read dtypes — 417 tensors were FP32 in source. After
+`save_pretrained(torch_dtype=torch.bfloat16)`, all 417 are BF16 in
+output.
+
+**Impact:** numerical precision loss on the HC paths and on the LM head
+gating math. The sibling's published artifact also has all these
+restored to FP32 in postprocess, so they ran into this too — the
+restore step is necessary.
+
+**Workaround:** postprocess script reads source's FP32 tensors back and
+writes them over the BF16 versions in the artifact shards. The
+predicate must be applied AFTER all renames (the original
+`e_score_correction_bias → bias` and `position_bias → ape` renames mean
+the predicate has to match POST-rename names). One predicate-after-
+rename pass catches all 417; predicate-before-rename misses 103.
+
+**Status:** carried as postprocess (see `/tmp/fixup_artifact.py` and the
+predecessor's postprocess). Not yet filed upstream against transformers.
+
+### C14 — vLLM MTP loader silently skips top-level head/embed
+
+**Symptom:** with our artifact containing top-level `head.weight` +
+`embed.weight` and NO `mtp.0.head.weight` / `mtp.0.emb.tok_emb.weight`,
+vLLM's MTP load proceeds cleanly (no error), produces draft tokens,
+and gets 0% acceptance.
+
+**Root cause:**
+`vllm/model_executor/models/deepseek_v4_mtp.py::DeepSeekV4MTP.load_weights`
+contains:
+
+```python
+for name, loaded_weight in weights:
+    name = name.replace("mtp.0.", ...)   # no-op on top-level keys
+    spec_layer = get_spec_layer_idx(name)
+    if spec_layer is None:
+        continue          # <- top-level head.weight + embed.weight die here
+    ...
+```
+
+Result: the MTP layer's `shared_head.head` (ParallelLMHead) and
+`embed_tokens` (VocabParallelEmbedding) stay uninitialized → garbage
+logits → 100% rejection by the verifier model.
+
+**Evidence:**
+- Sibling artifact `canada-quant/DeepSeek-V4-Flash-NVFP4-FP8-MTP` (works
+  at >0.5 acceptance per public README) has 799 `mtp.*` keys; ours had
+  797. The 2 extras are full duplicates of the top-level head and
+  embed.
+- Sibling artifact also UPCASTS `head.weight` from BF16 (DeepSeek
+  release) to FP32 in both the top-level and the MTP-alias copy. This
+  is presumably to preserve logit precision on the draft head.
+- vLLM has the same load path for both this repo (W4A16) and the
+  sibling (NVFP4) — both rely on the duplicates being on disk.
+
+**Impact:** any DSv4-Flash artifact built without explicit MTP
+head/embed duplicates will produce 0% acceptance silently. There's no
+load-time error to catch it; the only signal is acceptance metrics.
+
+**Workaround:** postprocess script that injects:
+- `mtp.0.head.weight` = FP32 copy of `head.weight` (also upcast top-level
+  to FP32 for precision)
+- `mtp.0.emb.tok_emb.weight` = BF16 copy of `embed.weight`
+
+into the shard holding `mtp.0.*` keys and updates the safetensors index.
+Cost ~+4 GB on a 165 GB artifact.
+
+**Status:** carried as postprocess. Worth filing against vLLM — either
+the loader should explicitly handle top-level head/embed for the MTP
+slot, or it should raise on an MTP layer with uninitialized
+shared_head.head. Silent 0%-acceptance is the worst possible failure
+mode for this. File reference: `vllm/model_executor/models/deepseek_v4_mtp.py`.
+
+### Sibling-specific note
+
+The sibling NVFP4-FP8-MTP repo presumably either:
+(a) hit C14 and added the duplicate-injection step, or
+(b) inherited it from the predecessor's postprocess that did the same.
+
+Either way, the duplicate-injection pattern is part of the sibling's
+working postprocess. The W4A16 sibling (this repo) needs the same. Any
+*future* DSv4-Flash quant — by anyone — needs the same. This is a
+recipe-level invariant, not a per-quantization choice.
+
+### C15 — DeepGemm `paged_mqa_logits` kernel asserts on `next_n > 2`, capping `num_speculative_tokens` at 1
+
+**Symptom:** vLLM serve with `--speculative-config '{"method":"mtp","num_speculative_tokens":2}'`
+crashes during `profile_cudagraph_memory` with:
+
+```
+RuntimeError: Assertion error
+  (.../deepgemm-src/csrc/apis/../jit_kernels/impls/smxx_fp8_fp4_paged_mqa_logits.hpp:233):
+  next_n == 1 or next_n == 2
+```
+
+The assertion fires before /health ever returns. `num_speculative_tokens=1`
+works fine. Confirmed reproducible on:
+- vLLM build `~/src/vllm` HEAD `50d9dd902` (cherry-pick PRs #43248+#43288+#43290+#43319)
+- H200 (Hopper, sm_90a)
+- Phase 2 W4A16+FP8+MTP artifact
+
+**Root cause (diagnosis):** vLLM passes `next_n = num_speculative_tokens + 1`
+into the DeepGemm `smxx_fp8_fp4_paged_mqa_logits` kernel (k draft tokens + 1
+main verifier token in the lookahead window). The assertion `next_n == 1 or
+next_n == 2` therefore enforces `num_speculative_tokens <= 1`. With `k=1`,
+next_n=2 (passes). With `k=2`, next_n=3 (fails). The error message is
+misleading — it sounds like the kernel allows 1 or 2 spec tokens, but it
+actually allows 1 or 2 total lookahead positions.
+
+Other DeepGemm assertions confirm the hard-coded ceiling:
+- `attention.hpp:210`: `arch_major == 10 and next_n == 1 and (block_kv == 64 or block_kv == 32)`
+- `attention.hpp:338`: `arch_major == 10 and next_n == 1`
+
+These are Blackwell-only paths (`arch_major == 10`). The H200 (Hopper,
+`arch_major == 9`) falls into the `paged_mqa_logits` path which accepts
+`next_n <= 2`.
+
+**Workaround attempts:**
+- `--attention-backend FLASHINFER_MLA_SPARSE`: same kernel still fires
+  (the paged_mqa_logits kernel is logits-side, not attention-backend-specific).
+- `--enforce-eager`: not yet tried (disables cudagraphs entirely, which is
+  the launch-throughput-killing trade we don't want for production).
+
+**Impact:** on H200, the practical MTP `num_speculative_tokens` ceiling is 1.
+Theoretical k=1 speedup at 89% acceptance is ~1.49× (matches what we
+measured at bs=1 → 6.02ms TPOT vs 8.93ms without MTP). With k=2 unlocked,
+theoretical speedup would be ~1.9-2.0× (more lookahead per verifier pass).
+
+**Status:** filed as C15 here (2026-05-22). Not yet pushed upstream to
+DeepGemm / vLLM. **Fix proposal:** widen the assertion in
+`smxx_fp8_fp4_paged_mqa_logits.hpp` to allow next_n up to 4 (or whatever
+the kernel actually supports), OR document the
+`num_speculative_tokens <= 1` constraint clearly in vLLM's spec-decode
+config validation so users get a clean error before the cudagraph
+capture step blows up.
+
+**Why this matters for the launch story:** our published throughput number
+(1.49× bs=1 with k=1) is real and reproducible, but it leaves ~25% of
+the MTP speedup on the table compared to what k=2 would deliver. Worth
+calling out as "current vLLM build limits us to k=1; with k=2 unlocked
+expected speedup is ~1.9×" if the model card discusses throughput.

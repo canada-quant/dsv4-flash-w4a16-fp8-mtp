@@ -4,6 +4,31 @@ User left for sleep around 06:30 UTC on 2026-05-21 authorizing autonomous
 progression to Phase 2 launch. Working through 2026-05-21 ~12:30 UTC
 (~6h autonomous). This is the situation when you wake up.
 
+## ⚠️ HANDOFF INACCURACY — 2026-05-22 corrected
+
+The pre-compaction summary in this file's prior revision claimed the iter 9
+artifact at `/scratch/weights/w4a16-fp8-mtp-smoke` was **corrupted** ("4 shards
+have incomplete metadata headers from interrupted rename_e_score.py").
+**This was wrong.** Verified 2026-05-22 ~01:00 UTC: all 4 shards open clean
+with `safetensors.safe_open`, 101,449 total keys, no truncated headers.
+
+Built a 3h re-smoke plan partly on this false claim. Saved by running the
+verify-open check first thing on resume. Lesson: pre-compaction summary
+claims are NOT facts — verify before acting. Especially "X is corrupted /
+broken / failed" claims; those are exactly the ones that drive expensive
+recovery decisions.
+
+The real artifact state on 2026-05-22 ~01:30 UTC was: shards intact, both
+rename passes applied (797 mtp.* keys, 0 layers.43.* keys, no
+e_score_correction_bias), but 103 FP32 dtypes drifted (not just 41 — also
+41 `attn.compressor.ape` + 21 `attn.indexer.compressor.ape` which the original
+restore predicate didn't cover post-rename), and 2 alias keys missing
+(`mtp.0.head.weight` + `mtp.0.emb.tok_emb.weight`) which is why MTP returns
+garbage logits and 0% acceptance (vLLM's `DeepSeekV4MTP.load_weights`
+silently skips top-level head/embed for the MTP slot — sibling artifact
+adds these as full FP32 duplicates of head.weight and BF16 duplicates of
+embed.weight in postprocess).
+
 ## ⚠️ HARD CHECKPOINT — read this BEFORE debugging any error
 
 **Rule (added 2026-05-21 17:50 UTC after this rule was violated 3×
