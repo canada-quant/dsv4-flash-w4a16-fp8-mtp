@@ -828,11 +828,7 @@ load-time error to catch it; the only signal is acceptance metrics.
 into the shard holding `mtp.0.*` keys and updates the safetensors index.
 Cost ~+4 GB on a 165 GB artifact.
 
-**Status:** carried as postprocess. Worth filing against vLLM — either
-the loader should explicitly handle top-level head/embed for the MTP
-slot, or it should raise on an MTP layer with uninitialized
-shared_head.head. Silent 0%-acceptance is the worst possible failure
-mode for this. File reference: `vllm/model_executor/models/deepseek_v4_mtp.py`.
+**Status:** Filed upstream as [`vllm-project/vllm#43456`](https://github.com/vllm-project/vllm/issues/43456) and PR'd in [`vllm-project/vllm#43459`](https://github.com/vllm-project/vllm/pull/43459) (route top-level head/embed to mtp.{N}.* aliases before the spec_layer check). Postprocess workaround in `scripts/fixup_artifact.py` will become redundant once the PR lands.
 
 ### Sibling-specific note
 
