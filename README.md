@@ -76,6 +76,7 @@ on a `p5en.48xlarge`), same vLLM build (HEAD `50d9dd902` with PRs
 | GSM8K 8-shot strict-match | **93.71%** ± 0.67 | 94.99% (phase4e, 8-shot strict) | 91.0% | -1.28 pts (within SE) |
 | GSM8K 8-shot flexible-extract | 93.63% ± 0.67 | — | — | predecessor HF card cites 5-shot flex at 92.87%; not directly comparable to our 8-shot |
 | MMLU 5-shot | **86.88%** ± 0.27 | 87.27% | — | -0.39 pts (within SE) |
+| MMLU-Pro 5-shot (12k prompts, custom-extract) | **71.28%** ± 0.40 | — | — | sibling NVFP4-FP8-MTP scored 81.13% (B300) → -9.85 pts vs sibling; expected given W4A16 has more quantization noise than NVFP4 on a knowledge-heavy harder benchmark |
 | HumanEval pass@1 0-shot instruct | **84.76%** ± 2.82 | 54.27% (strict-regex artifact) | — | predecessor's 54.27% reflects a strict-regex extraction artifact (per predecessor notes); our 84.76% uses lm-eval-harness's default flexible code-block extraction, which is what `evaluate-metric/code_eval` actually executes |
 | AIME 24 (math competition, 30 problems) | **30.0% exact_match** ± 8.51 | — | — | sibling published `tier1_aime24_2026_05_21.md`; competition math at high difficulty |
 | Chat-smoke quick (4 deterministic) | **4/4** | 4/4 | — | match |
