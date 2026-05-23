@@ -73,8 +73,8 @@ on a `p5en.48xlarge`), same vLLM build (HEAD `50d9dd902` with PRs
 
 | Benchmark | Phase 2 (this repo) | Predecessor (W4A16-FP8, no MTP, HF card) | RedHat (NVFP4-FP8, no MTP) | Delta vs predecessor |
 |---|---|---|---|---|
-| GSM8K 8-shot strict-match | **93.71%** ± 0.67 | 94.99% (phase4e, 8-shot) | 91.0% | -1.28 pts |
-| GSM8K 5-shot flex (HF card protocol) | 93.63% ± 0.67 (8-shot flex) | 92.87% (5-shot flex) | — | +0.76 pts |
+| GSM8K 8-shot strict-match | **93.71%** ± 0.67 | 94.99% (phase4e, 8-shot strict) | 91.0% | -1.28 pts (within SE) |
+| GSM8K 8-shot flexible-extract | 93.63% ± 0.67 | — | — | predecessor HF card cites 5-shot flex at 92.87%; not directly comparable to our 8-shot |
 | MMLU 5-shot | **86.88%** ± 0.27 | 87.27% | — | -0.39 pts (within SE) |
 | HumanEval pass@1 0-shot instruct | **84.76%** ± 2.82 | 54.27% (strict-regex artifact) | — | predecessor's 54.27% reflects a strict-regex extraction artifact (per predecessor notes); our 84.76% uses lm-eval-harness's default flexible code-block extraction, which is what `evaluate-metric/code_eval` actually executes |
 | Chat-smoke quick (4 deterministic) | **4/4** | 4/4 | — | match |
@@ -231,7 +231,7 @@ HBM3e per GPU). vLLM serve uses TP=2 (2 GPUs per replica) per the
 sibling artifact's published guidance — TP=4 underutilizes Marlin
 tensor cores on per-rank expert shards for our W4A16 layout.
 
-- Phase 1 dequant + Phase 2 calibration: ~16h wall on full 8× H200.
+- Phase 2 GPTQ calibration: 15.09h oneshot + ~16 min save = ~15.4h end-to-end on 8× H200. Per-subgraph cadence stabilized at ~20 min/subgraph across 44 subgraphs (43 MoE main + 1 MTP — MTP subgraph is a no-op per Option Y).
 - Phase 2 GPTQ output: 4 shards, 159 GB total.
 - Postprocess: ~6 min wall (single-process, 4 shards rewritten
   atomically with FP32 restore + alias injection).

@@ -7,7 +7,7 @@
 - vLLM: `~/src/vllm` HEAD `50d9dd902` (cherry-pick PRs #43248+#43288+#43290+#43319)
 - vLLM bench: `vllm bench serve --dataset-name random --random-input-len 256 --random-output-len 256`
 - N prompts: 8N at concurrency N (8 / 32 / 128 for bs=1/4/16)
-- **Spec config: `method=mtp num_speculative_tokens=1`** — `=2` triggers DeepGemm kernel assertion `next_n == 1 or next_n == 2` during cudagraph profiling in this build, so we ran at k=1. Sibling's published 2.03× was at k=2; theoretical k=1 ceiling is ~1.89× (1 + acceptance with overhead).
+- **Spec config: `method=mtp num_speculative_tokens=1`** — `=2` triggers DeepGemm kernel assertion `next_n == 1 or next_n == 2` during cudagraph profiling in this build, so we ran at k=1. Sibling's published 2.03× was at k=2; at our measured 69.94% draft-acceptance (200-prompt eval), the theoretical k=1 ceiling is ~1.70× (1 + 0.6994). Our measured 1.49× is within ~12% of theoretical, the gap being spec-decode kernel overhead per step.
 - max-num-seqs 16, max-model-len 4096, kv-cache-dtype fp8, block-size 256
 
 ## Raw results

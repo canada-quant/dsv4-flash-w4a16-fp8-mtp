@@ -885,9 +885,12 @@ These are Blackwell-only paths (`arch_major == 10`). The H200 (Hopper,
   the launch-throughput-killing trade we don't want for production).
 
 **Impact:** on H200, the practical MTP `num_speculative_tokens` ceiling is 1.
-Theoretical k=1 speedup at 89% acceptance is ~1.49× (matches what we
-measured at bs=1 → 6.02ms TPOT vs 8.93ms without MTP). With k=2 unlocked,
-theoretical speedup would be ~1.9-2.0× (more lookahead per verifier pass).
+At our measured 69.94% draft-acceptance (200-prompt eval), the k=1 theoretical
+speedup ceiling is ~1.70× (1 + 0.6994). Our measured 1.49× at bs=1 (6.02ms
+TPOT vs 8.93ms without MTP) lands within ~12% of that ceiling, the gap being
+per-step spec-decode kernel overhead. With k=2 unlocked, theoretical speedup
+would rise to ~2.0× (more lookahead per verifier pass — matches sibling's
+published 2.03× on NVFP4 B300 at similar acceptance).
 
 **Status:** filed as C15 here (2026-05-22). Not yet pushed upstream to
 DeepGemm / vLLM. **Fix proposal:** widen the assertion in
