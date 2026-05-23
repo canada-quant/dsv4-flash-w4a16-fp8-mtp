@@ -77,6 +77,7 @@ on a `p5en.48xlarge`), same vLLM build (HEAD `50d9dd902` with PRs
 | GSM8K 8-shot flexible-extract | 93.63% ± 0.67 | — | — | predecessor HF card cites 5-shot flex at 92.87%; not directly comparable to our 8-shot |
 | MMLU 5-shot | **86.88%** ± 0.27 | 87.27% | — | -0.39 pts (within SE) |
 | HumanEval pass@1 0-shot instruct | **84.76%** ± 2.82 | 54.27% (strict-regex artifact) | — | predecessor's 54.27% reflects a strict-regex extraction artifact (per predecessor notes); our 84.76% uses lm-eval-harness's default flexible code-block extraction, which is what `evaluate-metric/code_eval` actually executes |
+| AIME 24 (math competition, 30 problems) | **30.0% exact_match** ± 8.51 | — | — | sibling published `tier1_aime24_2026_05_21.md`; competition math at high difficulty |
 | Chat-smoke quick (4 deterministic) | **4/4** | 4/4 | — | match |
 | Chat-smoke quality (4 writing/translation) | **4/4** | 4/4 | — | match |
 | Chat-smoke coding (2 HTML/code) | **2/2** | 2/2 | — | match |
@@ -87,6 +88,9 @@ on a `p5en.48xlarge`), same vLLM build (HEAD `50d9dd902` with PRs
 | Metric | Phase 2 | Sibling NVFP4-FP8-MTP (published) | Notes |
 |---|---|---|---|
 | MTP draft-token acceptance (random 256-token prompts, c=1, k=1, 200 samples) | **69.94%** (21024 / 30058) | 67.29% (HumanEval raw code, c=1, k=2) | Direct comparison — different prompt distribution but same metric class |
+| MTP acceptance by workload — code (15 raw-completion prompts) | **92.91%** (1847 / 1988) | 67.29% (sibling raw HumanEval) | Sibling's HumanEval prompts are full multi-line function bodies; ours are short signature+docstring prompts — predictable continuation pattern bumps acceptance |
+| MTP acceptance by workload — chat-templated prose (15 prompts) | **81.90%** (1946 / 2376) | 85.04% (sibling EvalPlus HumanEval c=16) | Both numbers fall in the chat-templated 80-85% band sibling documented |
+| MTP acceptance by workload — raw natural language (15 continuation prompts) | **83.65%** (1745 / 2086) | — | New measurement |
 | Decode TPOT median, bs=1, k=1, MTP-spec | **6.02 ms** | — | Single-user decode latency per output token |
 | Decode TPOT median, bs=1, no spec-decode | 8.93 ms | — | Same artifact, spec-decode disabled |
 | **Decode speedup bs=1 (k=1, vs no-spec)** | **1.49×** | 2.03× (sibling at k=2) | Sibling used k=2; we hit DeepGemm kernel ceiling at k=1 (see C15) |

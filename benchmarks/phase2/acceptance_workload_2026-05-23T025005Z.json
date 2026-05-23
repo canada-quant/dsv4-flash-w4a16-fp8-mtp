@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-05-23T025403Z",
+  "model": "DSV4-W4A16-FP8-MTP-PHASE2",
+  "num_speculative_tokens": 1,
+  "concurrency": 1,
+  "buckets": [
+    {
+      "name": "code_raw_completions",
+      "chat": false,
+      "n_prompts": 15,
+      "max_tokens": 256,
+      "delta_draft": 1988.0,
+      "delta_accepted": 1847.0,
+      "acceptance_rate": 0.9290744466800804,
+      "elapsed_s": 21.240468502044678
+    },
+    {
+      "name": "chat_templated_prose",
+      "chat": true,
+      "n_prompts": 15,
+      "max_tokens": 512,
+      "delta_draft": 2376.0,
+      "delta_accepted": 1946.0,
+      "acceptance_rate": 0.819023569023569,
+      "elapsed_s": 24.819249629974365
+    },
+    {
+      "name": "raw_nl_completions",
+      "chat": false,
+      "n_prompts": 15,
+      "max_tokens": 256,
+      "delta_draft": 2086.0,
+      "delta_accepted": 1745.0,
+      "acceptance_rate": 0.836529242569511,
+      "elapsed_s": 21.926433086395264
+    }
+  ]
+}
