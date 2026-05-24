@@ -19,12 +19,41 @@ library_name: vllm
 
 # DeepSeek-V4-Flash — W4A16 + FP8 + **BF16 MTP** (Option Y)
 
-The first DeepSeek-V4-Flash quantization that **preserves the Multi-Token Prediction
-(MTP) draft head at BF16 precision** while quantizing the main routed-experts to W4A16
-and the attention path to FP8_BLOCK. The MTP draft tower delivers a measured
-**1.49× decode speedup at single-user concurrency** versus the same artifact served
-without speculative decoding — with **zero quality regression** on standard knowledge
-benchmarks vs the predecessor W4A16 quant.
+**The first DeepSeek-V4-Flash quantization that ships a working
+Multi-Token-Prediction (MTP) draft head.** Same W4A16+FP8 main weights
+as the predecessor `canada-quant/DeepSeek-V4-Flash-W4A16-FP8`, but the
+MTP block is preserved at BF16 instead of being silently dropped by
+`transformers` — so speculative decoding actually fires and gives you
+~1.5× faster interactive inference at no quality cost.
+
+## TL;DR — what this artifact gives you
+
+### vs predecessor (W4A16-FP8 without MTP)
+
+|  | Predecessor (`canada-quant/DeepSeek-V4-Flash-W4A16-FP8`) | **This artifact (W4A16+FP8+MTP)** |
+|---|---|---|
+| MTP draft head | Silently dropped at load (transformers regex bug) | **Preserved at BF16** ✓ |
+| Spec-decode wins at bs=1 | n/a — speculative decoding can't fire | **1.49× faster TPOT** (6.02 ms vs 8.93 ms on H200, same artifact w/ and w/o spec) |
+| GSM8K 8-shot strict | 94.99% | 93.71% — within 1 SE, no quality cost |
+| MMLU 5-shot | 87.27% | 86.88% — within 1 SE |
+| HumanEval pass@1 | 54.27% (regex artifact) | 84.76% (default flexible extract) |
+| Artifact size | 156 GB | 159 GB (+3 GB for the BF16 MTP block) |
+
+### Throughput by hardware (per-replica TP=2 with MTP-spec k=1)
+
+| Hardware | bs=1 tok/s | bs=1 TPOT (ms) | bs=16 tok/s | MTP acceptance |
+|---|---|---|---|---|
+| H200 (Hopper SM 9.0a) — calibration hw | 88.35 | 6.02 | 367.13 | 89% calibrated / 70% 200-prompt |
+| **RTX PRO 6000 Blackwell (SM 12.0) — TP=2** | **98.83** | 8.55 | 482.61 | 71% |
+| **RTX PRO 6000 Blackwell (SM 12.0) — TP=4** | **107.32** | 7.77 | 584.04 | 68% |
+
+### Cost per output token (node-level, fully utilized)
+
+At bs=1, **RTX 6000 Pro is ~2.7× cheaper per token** than fully
+utilized H200. At bs=16, ~3.2× cheaper. See "Hardware" section below
+for the full $/(1000 tok/h) table.
+
+### Component precisions (full recipe)
 
 | Component | Precision | Quantization recipe |
 |---|---|---|
