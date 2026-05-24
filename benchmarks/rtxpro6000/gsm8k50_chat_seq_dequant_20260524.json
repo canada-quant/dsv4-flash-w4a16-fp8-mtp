@@ -1,0 +1,378 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loaded 50 GSM8K problems
+[1/50] running 1/1 = 100.0% (last exp=109 pred=109 OK)
+[2/50] running 1/2 = 50.0% (last exp=89 pred=92 NO)
+[3/50] running 2/3 = 66.7% (last exp=13 pred=13 OK)
+[5/50] running 4/5 = 80.0% (last exp=25 pred=25 OK)
+[10/50] running 9/10 = 90.0% (last exp=11 pred=11 OK)
+[15/50] running 14/15 = 93.3% (last exp=105 pred=105 OK)
+[20/50] running 19/20 = 95.0% (last exp=45 pred=45 OK)
+[25/50] running 23/25 = 92.0% (last exp=18 pred=10 NO)
+[30/50] running 26/30 = 86.7% (last exp=32 pred=32 OK)
+[35/50] running 30/35 = 85.7% (last exp=250 pred=250 OK)
+[40/50] running 34/40 = 85.0% (last exp=276000 pred=276000 OK)
+[45/50] running 39/45 = 86.7% (last exp=296 pred=296 OK)
+[50/50] running 44/50 = 88.0% (last exp=6 pred=6 OK)
+
+GSM8K-50: 44/50 = 88.0% (524s)
+{
+  "model": "DSV4-W4A16-FP8-MTP",
+  "n": 50,
+  "correct": 44,
+  "accuracy": 0.88,
+  "wall_clock_s": 524.3872282640004,
+  "avg_completion_tokens": 127.54,
+  "methodology": "chat-mode, no thinking, concurrency=1, greedy, last-number extraction",
+  "results": [
+    {
+      "idx": 0,
+      "expected": "109",
+      "predicted": "109",
+      "correct": true,
+      "completion_tokens": 123
+    },
+    {
+      "idx": 1,
+      "expected": "89",
+      "predicted": "92",
+      "correct": false,
+      "completion_tokens": 388
+    },
+    {
+      "idx": 2,
+      "expected": "13",
+      "predicted": "13",
+      "correct": true,
+      "completion_tokens": 68
+    },
+    {
+      "idx": 3,
+      "expected": "5",
+      "predicted": "5",
+      "correct": true,
+      "completion_tokens": 135
+    },
+    {
+      "idx": 4,
+      "expected": "25",
+      "predicted": "25",
+      "correct": true,
+      "completion_tokens": 136
+    },
+    {
+      "idx": 5,
+      "expected": "452",
+      "predicted": "452",
+      "correct": true,
+      "completion_tokens": 147
+    },
+    {
+      "idx": 6,
+      "expected": "43",
+      "predicted": "43",
+      "correct": true,
+      "completion_tokens": 115
+    },
+    {
+      "idx": 7,
+      "expected": "34",
+      "predicted": "34",
+      "correct": true,
+      "completion_tokens": 141
+    },
+    {
+      "idx": 8,
+      "expected": "120",
+      "predicted": "120",
+      "correct": true,
+      "completion_tokens": 60
+    },
+    {
+      "idx": 9,
+      "expected": "11",
+      "predicted": "11",
+      "correct": true,
+      "completion_tokens": 156
+    },
+    {
+      "idx": 10,
+      "expected": "34",
+      "predicted": "34",
+      "correct": true,
+      "completion_tokens": 207
+    },
+    {
+      "idx": 11,
+      "expected": "12",
+      "predicted": "12",
+      "correct": true,
+      "completion_tokens": 49
+    },
+    {
+      "idx": 12,
+      "expected": "15",
+      "predicted": "15",
+      "correct": true,
+      "completion_tokens": 310
+    },
+    {
+      "idx": 13,
+      "expected": "24",
+      "predicted": "24",
+      "correct": true,
+      "completion_tokens": 75
+    },
+    {
+      "idx": 14,
+      "expected": "105",
+      "predicted": "105",
+      "correct": true,
+      "completion_tokens": 156
+    },
+    {
+      "idx": 15,
+      "expected": "120",
+      "predicted": "120",
+      "correct": true,
+      "completion_tokens": 63
+    },
+    {
+      "idx": 16,
+      "expected": "17",
+      "predicted": "17",
+      "correct": true,
+      "completion_tokens": 92
+    },
+    {
+      "idx": 17,
+      "expected": "36",
+      "predicted": "36",
+      "correct": true,
+      "completion_tokens": 93
+    },
+    {
+      "idx": 18,
+      "expected": "12",
+      "predicted": "12",
+      "correct": true,
+      "completion_tokens": 82
+    },
+    {
+      "idx": 19,
+      "expected": "45",
+      "predicted": "45",
+      "correct": true,
+      "completion_tokens": 76
+    },
+    {
+      "idx": 20,
+      "expected": "45",
+      "predicted": "45",
+      "correct": true,
+      "completion_tokens": 114
+    },
+    {
+      "idx": 21,
+      "expected": "8",
+      "predicted": "8",
+      "correct": true,
+      "completion_tokens": 44
+    },
+    {
+      "idx": 22,
+      "expected": "36",
+      "predicted": "36",
+      "correct": true,
+      "completion_tokens": 155
+    },
+    {
+      "idx": 23,
+      "expected": "1",
+      "predicted": "1",
+      "correct": true,
+      "completion_tokens": 172
+    },
+    {
+      "idx": 24,
+      "expected": "18",
+      "predicted": "10",
+      "correct": false,
+      "completion_tokens": 93
+    },
+    {
+      "idx": 25,
+      "expected": "33",
+      "predicted": "33.00",
+      "correct": false,
+      "completion_tokens": 108
+    },
+    {
+      "idx": 26,
+      "expected": "1248",
+      "predicted": "1248",
+      "correct": true,
+      "completion_tokens": 204
+    },
+    {
+      "idx": 27,
+      "expected": "25",
+      "predicted": "25",
+      "correct": true,
+      "completion_tokens": 253
+    },
+    {
+      "idx": 28,
+      "expected": "1",
+      "predicted": "1.00",
+      "correct": false,
+      "completion_tokens": 117
+    },
+    {
+      "idx": 29,
+      "expected": "32",
+      "predicted": "32",
+      "correct": true,
+      "completion_tokens": 91
+    },
+    {
+      "idx": 30,
+      "expected": "2",
+      "predicted": "2",
+      "correct": true,
+      "completion_tokens": 90
+    },
+    {
+      "idx": 31,
+      "expected": "30",
+      "predicted": "30",
+      "correct": true,
+      "completion_tokens": 94
+    },
+    {
+      "idx": 32,
+      "expected": "4",
+      "predicted": "4.00",
+      "correct": false,
+      "completion_tokens": 106
+    },
+    {
+      "idx": 33,
+      "expected": "54",
+      "predicted": "54",
+      "correct": true,
+      "completion_tokens": 134
+    },
+    {
+      "idx": 34,
+      "expected": "250",
+      "predicted": "250",
+      "correct": true,
+      "completion_tokens": 131
+    },
+    {
+      "idx": 35,
+      "expected": "324",
+      "predicted": "294",
+      "correct": false,
+      "completion_tokens": 173
+    },
+    {
+      "idx": 36,
+      "expected": "129200",
+      "predicted": "129200",
+      "correct": true,
+      "completion_tokens": 107
+    },
+    {
+      "idx": 37,
+      "expected": "4400",
+      "predicted": "4400",
+      "correct": true,
+      "completion_tokens": 250
+    },
+    {
+      "idx": 38,
+      "expected": "70",
+      "predicted": "70",
+      "correct": true,
+      "completion_tokens": 94
+    },
+    {
+      "idx": 39,
+      "expected": "276000",
+      "predicted": "276000",
+      "correct": true,
+      "completion_tokens": 116
+    },
+    {
+      "idx": 40,
+      "expected": "108",
+      "predicted": "108",
+      "correct": true,
+      "completion_tokens": 162
+    },
+    {
+      "idx": 41,
+      "expected": "160",
+      "predicted": "160",
+      "correct": true,
+      "completion_tokens": 87
+    },
+    {
+      "idx": 42,
+      "expected": "90",
+      "predicted": "90",
+      "correct": true,
+      "completion_tokens": 47
+    },
+    {
+      "idx": 43,
+      "expected": "20",
+      "predicted": "20",
+      "correct": true,
+      "completion_tokens": 70
+    },
+    {
+      "idx": 44,
+      "expected": "296",
+      "predicted": "296",
+      "correct": true,
+      "completion_tokens": 149
+    },
+    {
+      "idx": 45,
+      "expected": "4800",
+      "predicted": "4800",
+      "correct": true,
+      "completion_tokens": 111
+    },
+    {
+      "idx": 46,
+      "expected": "30",
+      "predicted": "30",
+      "correct": true,
+      "completion_tokens": 125
+    },
+    {
+      "idx": 47,
+      "expected": "8",
+      "predicted": "8",
+      "correct": true,
+      "completion_tokens": 55
+    },
+    {
+      "idx": 48,
+      "expected": "1920",
+      "predicted": "1920",
+      "correct": true,
+      "completion_tokens": 108
+    },
+    {
+      "idx": 49,
+      "expected": "6",
+      "predicted": "6",
+      "correct": true,
+      "completion_tokens": 145
+    }
+  ]
+}
