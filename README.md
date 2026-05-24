@@ -98,8 +98,8 @@ Full RTX PRO 6000 recipe (patch rationale, debug notes): [`RECIPE_RTX6000PRO.md`
 | Hardware | TP | bs=1 output tok/s | bs=1 TPOT | bs=16 output tok/s | MTP acceptance @ bs=1 |
 |---|---|---|---|---|---|
 | 8× H200 | 2 | 88.35 | **6.02 ms** | 367.13 | 89% calibrated / 70% random |
-| 4× RTX PRO 6000 | 2 | **98.83** | 8.55 ms | 482.61 | 71% |
-| 4× RTX PRO 6000 | 4 | **107.32** | 7.77 ms | **584.04** | 68% |
+| 4× RTX PRO 6000 box | TP=2 (per replica, 2 replicas fit) | **98.83** | 8.55 ms | 482.61 | 71% |
+| 4× RTX PRO 6000 box | TP=4 (single replica) | **107.32** | 7.77 ms | **584.04** | 68% |
 
 Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%, HumanEval pass@1 84.76%, AIME 2024 30.0% (thinking=high). Spec-decode speedup: **1.49× at bs=1, k=1** (TPOT 6.02 ms vs 8.93 ms, same artifact w/ and w/o spec). Full numbers + methodology footnotes on the [HF model card](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP).
 
