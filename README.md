@@ -73,20 +73,18 @@ python scripts/patch_mtp_packed_mapping.py        "$(python -c 'import vllm; pri
 python scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
 bash   scripts/patch_wo_a_bf16_path.sh             "$(python -c 'import vllm; print(vllm.__path__[0])')"
 
-# 4) Download artifact (159 GiB)
+# 4) Download artifact (159 GiB) — already dequant'd in-artifact as of 2026-05-24,
+#    no local preprocessing step required
 pip install --user --quiet huggingface_hub hf-transfer
 export PATH="$HOME/.local/bin:$PATH"
 hf download canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP \
     --local-dir /scratch/weights/w4a16-fp8-mtp-gptq
 
-# 5) One-time compressor/indexer dequant (~1.5 min)
-python scripts/dequant_compressor.py /scratch/weights/w4a16-fp8-mtp-gptq
-
-# 6) Serve TP=2 (or TP=4 with 0,1,2,3)
+# 5) Serve TP=2 (or TP=4 with 0,1,2,3)
 CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_rtx6000pro.sh \
     /scratch/weights/w4a16-fp8-mtp-gptq 8000 2
 
-# 7) Smoke + bench
+# 6) Smoke + bench
 bash scripts/chat_smoke.sh http://localhost:8000
 bash scripts/bench_rtx6000pro_suite.sh http://localhost:8000 2 1
 ```
@@ -114,7 +112,7 @@ Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%
 | [`scripts/postprocess_phase2.sh`](scripts/postprocess_phase2.sh) | rename + config patch + FP32 restore + MTP head/embed aliases |
 | [`scripts/fixup_artifact.py`](scripts/fixup_artifact.py) | FP32 restore (workaround for `transformers.save_pretrained` silent downcast) + MTP alias injection |
 | [`scripts/verify_option_y.py`](scripts/verify_option_y.py) | Verify MTP block present and unquantized in saved artifact |
-| [`scripts/dequant_compressor.py`](scripts/dequant_compressor.py) | One-time compressor/indexer dequant for RTX PRO 6000 (SM 12.0 Triton path) |
+| [`scripts/dequant_compressor.py`](scripts/dequant_compressor.py) | Historical one-time compressor/indexer dequant. As of 2026-05-24 the dequant'd weights are baked into the published HF artifact, so this script is no longer needed for a fresh deploy. Kept for re-quant builds. |
 | [`scripts/serve_rtx6000pro.sh`](scripts/serve_rtx6000pro.sh) | RTX PRO 6000 serve helper with all required env vars |
 | [`scripts/patch_*.{py,sh}`](scripts/) | vLLM in-place patches for `packed_modules_mapping`, attn scale, BF16 `wo_a` |
 | [`benchmarks/rtx6000pro/`](benchmarks/rtx6000pro/) | Raw `vllm bench serve` JSONs + summary |
