@@ -155,7 +155,7 @@ if wo_a_scale is None:
 This mirrors what upstream PR #43290 did to the (different file path)
 `vllm/models/deepseek_v4/attention.py` on the H200 side.
 
-### 3.3 SM12-specific patch: BF16 wo_a path for MTP block
+### 3.3 SM12-specific patch: BF16 wo_a path for MTP block (dynamo-safe)
 
 The MTP block (layer 43) is preserved at BF16 in the artifact (Option Y).
 Its `wo_a` therefore has NO weight scale at all — neither `weight_scale`
@@ -165,16 +165,14 @@ crashes during `profile_run` when the spec-decode drafter exercises
 the MTP block.
 
 Fix: take the same BF16 reference path that's already used on ROCm
-when the MTP wo_a has no scale (call `rocm_inv_rope_einsum` + `wo_b()`
-in BF16 instead of the FP8 einsum):
+when the MTP wo_a is BF16. **Use the weight dtype, not a `getattr(...)`
+fallback** — dynamo's `_getattr_static` can't resolve dynamically
+registered attributes like `weight_scale`, but it CAN constant-fold a
+`tensor.dtype == torch.bfloat16` comparison at trace time:
 
 ```python
 # Apply via scripts/patch_wo_a_bf16_path.sh
-wo_a_has_scale = (
-    getattr(self.wo_a, "weight_scale_inv", None) is not None
-    or getattr(self.wo_a, "weight_scale", None) is not None
-)
-if current_platform.is_rocm() or not wo_a_has_scale:
+if current_platform.is_rocm() or self.wo_a.weight.dtype == torch.bfloat16:
     z = rocm_inv_rope_einsum(
         self.rotary_emb, o, positions, self.rope_head_dim,
         self.n_local_groups, self.o_lora_rank, self.wo_a,
@@ -182,6 +180,13 @@ if current_platform.is_rocm() or not wo_a_has_scale:
     return self.wo_b(z.flatten(1))
 # else fall through to FP8 einsum (unchanged)
 ```
+
+**Critical:** this dtype-based check is what unlocks `torch.compile` +
+cudagraph on RTX 6000 Pro. An earlier iteration of this patch used
+`getattr(self.wo_a, "weight_scale_inv", None) is not None` and forced
+`--enforce-eager`, which crippled throughput by ~10× (bs=1 ran at
+11.6 tok/s eager vs **98.8 tok/s with cudagraph**). The dtype rewrite is
+the single most impactful patch in this recipe.
 
 ### 3.4 Compressor / indexer.weights_proj are FP8 in artifact but unquantized in vLLM
 
@@ -250,25 +255,25 @@ Important flags baked into `scripts/serve_rtx6000pro.sh`:
 | `--block-size` | 256 | match H200 |
 | `--max-model-len` | 4096 | smoke + bench config; raise after stability proves out |
 | `--max-num-seqs` | 16 | bench-friendly batch lane |
-| `--gpu-memory-utilization` | **0.95** | tight on eager-mode without cudagraph savings |
+| `--gpu-memory-utilization` | **0.95** | tight without much headroom after model weights |
 | `--no-enable-prefix-caching` | (set) | match H200 |
 | `--speculative-config` | `{"method":"mtp","num_speculative_tokens":1}` | k=1 is the upstream-stable ceiling on SM12 |
-| `--enforce-eager` | **(set)** | required — see "torch.compile dynamo issue" below |
+| `--disable-custom-all-reduce` | **(set)** | RTX 6000 Pro lacks NVLink — the custom AR kernel fails with CUDA invalid-argument |
 
-### Why `--enforce-eager` is required
+### CUDA graphs work — and matter
 
-The runtime patch at §3.3 wraps `self.wo_a.weight_scale` access in
-`getattr(..., None)`. Under `torch.compile`, dynamo intercepts the
-attribute lookup with `_getattr_static()` which only inspects the
-TYPE — not the instance — and raises `AttributeError` for
-`weight_scale` since `ColumnParallelLinear` doesn't statically declare
-it. The MTP block's wo_a (BF16, no scale) trips this during cudagraph
-profiling.
+With the dynamo-safe wo_a dtype check (§3.3), full `torch.compile` +
+cudagraph capture works. Throughput vs eager mode:
 
-`--enforce-eager` bypasses dynamo entirely. The cost: **~10-14× decode
-slowdown** vs the H200 (which runs with full torch.compile +
-cudagraphs). A dynamo-safe rewrite of the wo_a dispatch would let us
-re-enable compile — see "Future work" below.
+| Metric | eager (--enforce-eager) | cudagraph (default) | Speedup |
+|---|---|---|---|
+| TP=2 bs=1 output tok/s | 11.57 | 98.83 | **8.5×** |
+| TP=2 bs=1 TPOT (ms) | 82.70 | 8.55 | **9.7×** |
+| TP=2 bs=16 output tok/s | 147.00 | 482.61 | **3.3×** |
+
+**Always run with cudagraphs on.** The eager-mode build is documented
+in the `benchmarks/rtx6000pro/2026-05-23-throughput-summary.md` file as
+a comparison reference only.
 
 ---
 
@@ -315,23 +320,27 @@ TP=2 + TP=4 + docs is ~$20-30.**
 
 ## 7. Future work
 
-1. **Dynamo-safe wo_a dispatch.** Cache `wo_a._has_scale` at module
-   `__init__` time so the forward path can branch on a static attribute
-   instead of `getattr(...)`. Lets us drop `--enforce-eager` and recover
-   torch.compile + cudagraph speedups (expect ~5-10× throughput).
-2. **Upstream the BF16 wo_a fallback.** This is the same shape as
-   upstream PR #43319 (auto-detect BF16 MTP); they handle MTP at the
-   load-config level but the runtime forward still needs the
-   wo_a-has-scale check. PR candidate.
-3. **TP=4 Marlin verification.** The Marlin MoE TP > 2 weight-scale
-   K-sharding bug (vllm-project/vllm#41511) was reported open as of
-   2026-05-19. Confirm whether the SM12 W4A16 MoE expert path lands on
-   Marlin or DeepGEMM on TP=4 and check if the bug bites.
+1. **Upstream the BF16 wo_a dtype fallback.** This is the dynamo-safe
+   shape of upstream PR #43319 (auto-detect BF16 MTP); the runtime
+   forward still needs the dtype branch we added. PR candidate.
+2. **Native NVFP4 MoE on SM120.** vLLM-project/vllm#31085 reports the
+   NVFP4 SM120 kernels exist (`nvfp4_scaled_mm_sm120_kernels.cu`,
+   `nvfp4_blockwise_moe_kernel.cu`) but the backend selector only
+   recognizes SM100. With that fixed and the sibling NVFP4-FP8-MTP
+   artifact, we'd land on a tighter expert kernel than the current
+   Marlin W4A16 path. The MoE bf16 acts × NVFP4 weights pattern is
+   close to ideal for RTX 6000 Pro's Blackwell-consumer FP4 unit.
+3. **k=2 spec-decode** — same DeepGEMM ceiling as H200, unrelated to
+   hardware. Tracked in C15.
 4. **Skip the dequant step** if jasl lands a per-attribute
    `quant_config` override for compressor / indexer.weights_proj /
    indexer.wq_b. The right end-state is the model class consuming the
    artifact's `quantization_config.config_groups` natively for these
    modules.
+5. **Accuracy benchmarks** — the bench suite's lm-eval invocation
+   needs `model_args=tokenizer=/path/to/artifact` to avoid HF model-id
+   lookup. Apply that and re-run GSM8K / MMLU / HumanEval / AIME 24
+   on TP=2 cudagraph to validate quality parity with H200.
 
 ---
 

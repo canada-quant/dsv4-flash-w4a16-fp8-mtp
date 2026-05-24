@@ -48,5 +48,5 @@ exec vllm serve "$MODEL_PATH" \
     --tool-call-parser deepseek_v4 --enable-auto-tool-choice \
     --reasoning-parser deepseek_v4 \
     --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
-    --enforce-eager \
+    --disable-custom-all-reduce \
     --trust-remote-code --host 0.0.0.0 --port "$PORT"

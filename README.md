@@ -241,33 +241,43 @@ tensor cores on per-rank expert shards for our W4A16 layout.
 - Postprocess: ~6 min wall (single-process, 4 shards rewritten
   atomically with FP32 restore + alias injection).
 
-### Also runs on RTX PRO 6000 Blackwell (SM 12.0)
+### Also runs on RTX PRO 6000 Blackwell (SM 12.0) — and beats H200 on throughput
 
-Second hardware demonstration on 2026-05-23: Brev `g7e.24xlarge` with
+Second hardware demonstration on 2026-05-24: Brev `g7e.24xlarge` with
 4× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GiB HBM3 each).
-Both TP=2 and TP=4 verified: model loads, chat-smoke 4/4 PASS,
-MTP acceptance 70-75% across batch sizes. The Marlin TP > 2
-weight-scale K-sharding bug (`vllm-project/vllm#41511`) did **not**
-fire on jasl/vllm's `ds4-sm120-preview-dev` branch.
+Full `torch.compile` + cudagraph stack enabled. Both TP=2 and TP=4
+verified: chat-smoke 4/4 PASS, MTP acceptance 68-72%, Marlin
+TP > 2 bug (`vllm-project/vllm#41511`) did **not** fire.
 
-Caveat: this run uses `--enforce-eager` (torch.compile + cudagraph
-disabled) because the runtime BF16 `wo_a` fallback patch needed for
-MTP block compatibility on the SM12 branch isn't dynamo-safe yet.
-Throughput is ~10× slower than H200 with compile; **MTP acceptance
-and quality are unchanged**. A dynamo-safe rewrite is tracked as
-future work in `RECIPE_RTX6000PRO.md`.
+**RTX 6000 Pro (cudagraph, TP=4) vs H200 (compile, TP=2):**
 
-| | H200 (with compile) | RTX 6000 Pro (eager) |
+| Metric | H200 TP=2 | RTX 6000 Pro TP=4 | Δ |
+|---|---|---|---|
+| bs=1 output tok/s | 88.35 | **107.32** | **+21%** |
+| bs=1 TPOT median (ms) | **6.02** | 7.77 | H200 wins |
+| bs=4 output tok/s | 138.80 | **221.52** | **+60%** |
+| bs=4 TPOT median (ms) | 9.50 | **11.32** | H200 wins |
+| bs=16 output tok/s | 367.13 | **584.04** | **+59%** |
+| MTP acceptance bs=1 | 89.1% / 69.94% | 68.15% | same band |
+
+H200 still wins per-token latency on the cheapest batch, but RTX 6000
+Pro has more aggregate FP8 / W4A16 throughput and **wins on total
+tok/s at every batch size**. The MoE weights stayed W4A16 (Marlin),
+attention stayed FP8_BLOCK, and the MTP block stayed BF16 throughout.
+
+| Patches required | H200 | RTX 6000 Pro |
 |---|---|---|
-| TP=2 bs=1 TPOT median (ms) | 6.02 | 82.70 |
-| TP=2 bs=1 output tok/s | 88.35 | 11.57 |
-| TP=2 bs=1 MTP acceptance | 89.1% / 69.94% | 74.17% |
-| TP=4 bs=16 output tok/s | n/a (single-replica) | 157.33 |
-| Marlin #41511 hit? | n/a (TP=2 only) | No |
-| Patches required | 2 (`packed_modules_mapping`) | 6 (see [`RECIPE_RTX6000PRO.md`](RECIPE_RTX6000PRO.md)) |
+| `packed_modules_mapping` on `DeepseekV4ForCausalLM` + `DeepSeekV4MTP` | ✓ | ✓ |
+| `weight_scale_inv → weight_scale` fallback on `wo_a` | ✓ (PR #43290) | ✓ (`patch_nvidia_attn_scale.py`) |
+| BF16 wo_a path for MTP block | n/a | ✓ — uses static `weight.dtype == bfloat16` check (dynamo-safe) |
+| Compressor/indexer FP8 → BF16 dequant preprocess | n/a | ✓ (`dequant_compressor.py`, one-time) |
+| `--disable-custom-all-reduce` (no NVLink) | n/a | ✓ |
+| CMakeLists `USE_SABI 3.11` removal for Py 3.10 | n/a | ✓ |
 
 Full reproduction recipe in [`RECIPE_RTX6000PRO.md`](RECIPE_RTX6000PRO.md).
-RTX 6000 Pro raw benchmark JSONs in `benchmarks/rtx6000pro/`.
+Raw JSONs + summary:
+- [`benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md`](benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md) (headline)
+- `benchmarks/rtx6000pro/tp{2,4}_2026-05-24T*/bench_mtp_bs{1,4,16}.json`
 
 ---
 

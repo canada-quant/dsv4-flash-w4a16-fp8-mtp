@@ -45,34 +45,51 @@ Edition (96 GiB HBM3 each), `g7e.24xlarge`, Columbus OH. vLLM built from
 branch — see [`RECIPE_RTX6000PRO.md`](RECIPE_RTX6000PRO.md) for the
 full reproduction path.
 
-**Important caveat:** these numbers are from **eager-mode** serving
-(`--enforce-eager`). The runtime BF16 `wo_a` fallback patch (needed for
-MTP block compatibility on SM12) is not dynamo-safe, which forces eager
-mode and disables `torch.compile` + cudagraphs. Throughput is therefore
-~10× slower than the H200 numbers above. With a dynamo-safe rewrite of
-the fallback, expect bs=1 TPOT to drop to 8-15 ms (competitive with H200).
-MTP acceptance and quality are unaffected.
+**Final numbers — with CUDA graphs (2026-05-24).** The dynamo-safe
+`self.wo_a.weight.dtype == torch.bfloat16` rewrite (replacing the
+`getattr(..., None)` pattern that tripped dynamo's `_getattr_static`)
+unlocks `torch.compile` + cudagraph. `--enforce-eager` is no longer
+needed; `--disable-custom-all-reduce` is required because RTX 6000 Pro
+lacks NVLink and the custom AR kernel fails with CUDA invalid-argument.
 
 | Run | Metric | TP=2 | TP=4 | H200 ref | Raw |
 |---|---|---|---|---|---|
-| 2026-05-23 chat-smoke quick | jasl harness equiv, 4 deterministic prompts | **4/4 PASS** | **4/4 PASS** | 4/4 PASS | [`benchmarks/rtx6000pro/tp2_2026-05-23T211824Z/chat_smoke_quick.log`](benchmarks/rtx6000pro/tp2_2026-05-23T211824Z/chat_smoke_quick.log), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-23T214313Z/chat_smoke_quick.log) |
-| 2026-05-23 throughput bs=1 (MTP-spec k=1) | `vllm bench serve` 8 prompts c=1 | **11.57 tok/s, TPOT 82.70 ms** | 11.74 tok/s, TPOT 85.23 ms | 88.35 tok/s, TPOT 6.02 ms | [`tp2 bs=1 json`](benchmarks/rtx6000pro/tp2_2026-05-23T211824Z/bench_mtp_bs1.json), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-23T214313Z/bench_mtp_bs1.json) |
-| 2026-05-23 throughput bs=4 (MTP-spec k=1) | `vllm bench serve` 32 prompts c=4 | 41.37 tok/s, TPOT 87.62 ms | 41.81 tok/s, TPOT 88.17 ms | 138.80 tok/s, TPOT 9.50 ms | [`tp2 bs=4 json`](benchmarks/rtx6000pro/tp2_2026-05-23T211824Z/bench_mtp_bs4.json) |
-| 2026-05-23 throughput bs=16 (MTP-spec k=1) | `vllm bench serve` 128 prompts c=16 | **147.00 tok/s** | **157.33 tok/s (+7%)** | 367.13 tok/s | [`tp2 bs=16 json`](benchmarks/rtx6000pro/tp2_2026-05-23T211824Z/bench_mtp_bs16.json), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-23T214313Z/bench_mtp_bs16.json) |
-| 2026-05-23 MTP acceptance bs=1 | reported by vLLM `/metrics`, 8 random prompts × 256 out | **74.17%** (870/1173) | 72.84% (861/1182) | 89.1% (Phase 2 calibrated) / 69.94% (200-prompt eval) | (in throughput JSON) |
-| 2026-05-23 MTP acceptance bs=4 | same | 70.70% (3386/4789) | 69.94% (3364/4810) | n/a | (in throughput JSON) |
-| 2026-05-23 MTP acceptance bs=16 | same | 72.04% (13691/19004) | 71.28% (13607/19090) | n/a | (in throughput JSON) |
+| 2026-05-24 chat-smoke quick | jasl harness equiv, 4 deterministic prompts | **4/4 PASS** | **4/4 PASS** | 4/4 PASS | [`benchmarks/rtx6000pro/tp2_2026-05-24T010311Z/chat_smoke_quick.log`](benchmarks/rtx6000pro/tp2_2026-05-24T010311Z/chat_smoke_quick.log), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-24T012112Z/chat_smoke_quick.log) |
+| 2026-05-24 throughput bs=1 (MTP-spec k=1) | `vllm bench serve` 8 prompts c=1 | **98.83 tok/s, TPOT 8.55 ms** | **107.32 tok/s, TPOT 7.77 ms** | 88.35 tok/s, TPOT 6.02 ms | [`tp2 bs=1 json`](benchmarks/rtx6000pro/tp2_2026-05-24T010311Z/bench_mtp_bs1.json), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-24T012112Z/bench_mtp_bs1.json) |
+| 2026-05-24 throughput bs=4 (MTP-spec k=1) | `vllm bench serve` 32 prompts c=4 | **219.53 tok/s, TPOT 14.28 ms** | **221.52 tok/s, TPOT 11.32 ms** | 138.80 tok/s, TPOT 9.50 ms | [`tp2 bs=4 json`](benchmarks/rtx6000pro/tp2_2026-05-24T010311Z/bench_mtp_bs4.json), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-24T012112Z/bench_mtp_bs4.json) |
+| 2026-05-24 throughput bs=16 (MTP-spec k=1) | `vllm bench serve` 128 prompts c=16 | **482.61 tok/s** | **584.04 tok/s** | 367.13 tok/s | [`tp2 bs=16 json`](benchmarks/rtx6000pro/tp2_2026-05-24T010311Z/bench_mtp_bs16.json), [`tp4`](benchmarks/rtx6000pro/tp4_2026-05-24T012112Z/bench_mtp_bs16.json) |
+| 2026-05-24 MTP acceptance bs=1 | reported by vLLM `/metrics`, 8 random prompts × 256 out | 71.39% (851/1192) | 68.15% (828/1215) | 89.1% (Phase 2 calibrated) / 69.94% (200-prompt eval) | (in throughput JSON) |
+| 2026-05-24 MTP acceptance bs=4 | same | 68.41% (3320/4853) | 71.17% (3397/4773) | n/a | (in throughput JSON) |
+| 2026-05-24 MTP acceptance bs=16 | same | 71.63% (13647/19051) | 71.00% (13579/19125) | n/a | (in throughput JSON) |
+
+**Headline:** RTX 6000 Pro Blackwell **fully beats H200 in output tok/s**
+at every batch size:
+- bs=1: TP=4 107.3 tok/s vs H200 88.4 (+21%)
+- bs=4: TP=4 221.5 tok/s vs H200 138.8 (+60%)
+- bs=16: TP=4 584.0 tok/s vs H200 367.1 (+59%)
+
+H200 still wins on per-token TPOT median (better-tuned Hopper kernel
+cost), but RTX 6000 Pro is the clear throughput winner.
+
+**Speedup from re-enabling cudagraph (vs the 2026-05-23 eager-mode run):**
+
+| Metric | Eager-mode | Cudagraph | Speedup |
+|---|---|---|---|
+| TP=2 bs=1 output tok/s | 11.57 | 98.83 | **8.54×** |
+| TP=2 bs=1 TPOT (ms) | 82.70 | 8.55 | **9.67×** |
+| TP=2 bs=16 output tok/s | 147.00 | 482.61 | **3.28×** |
 
 **Marlin TP > 2 bug (`vllm-project/vllm#41511`) verdict:** did **not**
-fire on TP=4 — model loaded cleanly, all 43 MoE layers + MTP block
-initialized, chat smoke 4/4 PASS. Either fixed on jasl/vllm's
-`ds4-sm120-preview-dev` branch's compressed_tensors path, or our
-W4A16 layout doesn't trigger the failing K-sharding code path.
+fire on TP=4 (with or without cudagraph). The bug is either fixed in
+`jasl/vllm@ds4-sm120-preview-dev` or our W4A16 layout doesn't trigger
+the failing K-sharding path.
 
-**Full summary:** [`benchmarks/rtx6000pro/2026-05-23-throughput-summary.md`](benchmarks/rtx6000pro/2026-05-23-throughput-summary.md)
+**Full summary:** [`benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md`](benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md) (current/headline numbers) and [`benchmarks/rtx6000pro/2026-05-23-throughput-summary.md`](benchmarks/rtx6000pro/2026-05-23-throughput-summary.md) (eager-mode reference run kept for comparison).
 
-**Accuracy benchmarks deferred:** GSM8K / MMLU / HumanEval / AIME on RTX
-6000 Pro would take ~8-12 hours in eager mode (vs 30 min on H200 with
-compile + cudagraph). Re-run after the dynamo-safe rewrite lands. The
-H200 quality numbers above remain the published quality reference for
-this artifact.
+**Accuracy benchmarks (GSM8K / MMLU / HumanEval / AIME) deferred** to a
+follow-up — would need the `lm_eval` script to point `tokenizer=`
+explicitly at the artifact directory (currently it tries to fetch the
+served-model-name as an HF id). H200 quality numbers above remain the
+published quality reference for this artifact; cudagraph mode on RTX
+6000 Pro is a throughput change only, the model output distribution is
+unchanged.
