@@ -107,10 +107,19 @@ the failing K-sharding path.
 
 **Full summary:** [`benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md`](benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md) (current/headline numbers) and [`benchmarks/rtx6000pro/2026-05-23-throughput-summary.md`](benchmarks/rtx6000pro/2026-05-23-throughput-summary.md) (eager-mode reference run kept for comparison).
 
-**Accuracy benchmarks (GSM8K / MMLU / HumanEval / AIME) deferred** to a
-follow-up — would need the `lm_eval` script to point `tokenizer=`
-explicitly at the artifact directory (currently it tries to fetch the
-served-model-name as an HF id). H200 quality numbers above remain the
-published quality reference for this artifact; cudagraph mode on RTX
-6000 Pro is a throughput change only, the model output distribution is
-unchanged.
+**Accuracy quality smoke (2026-05-24, TP=2 cudagraph):** ran a
+50-prompt GSM8K subset with lm-eval-harness pointed at the local
+artifact (`tokenizer=/scratch/weights/w4a16-fp8-mtp-gptq` in
+model_args fixes the earlier HF-lookup failure). Result:
+**90.00% strict-match / 92.00% flexible-extract** ± ~4% standard
+error. Within one SE of the published H200 full-set GSM8K
+(8-shot strict 93.71% on 1319 prompts), confirming **model quality
+is intact on RTX 6000 Pro cudagraph mode** — the throughput speedup
+doesn't degrade the output distribution. Raw:
+[`benchmarks/rtx6000pro/tp2_gsm8k50_20260524T021831Z/`](benchmarks/rtx6000pro/tp2_gsm8k50_20260524T021831Z/).
+
+**Full accuracy sweep (MMLU / HumanEval / AIME) deferred** — same
+`tokenizer=` fix applies to all. The H200 quality numbers above
+remain the published quality reference for this artifact; the GSM8K
+smoke is the apples-to-apples confirmation that RTX 6000 Pro
+cudagraph produces equivalent output.
