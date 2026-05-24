@@ -189,6 +189,79 @@ maintainers comment on direction before the PR lands.
 - **Action:** update our bootstrap script to use `HF_XET_HIGH_PERFORMANCE=1`
   on the next bootstrap revision; no upstream issue needed.
 
+### C16 ⏳ — `vllm`: `nvidia/ops/attention.py:wo_a` access pattern is dynamo-unsafe
+
+- **Upstream:** `vllm-project/vllm`
+- **File:** `vllm/models/deepseek_v4/nvidia/ops/attention.py:370`
+- **Discovered while** porting the W4A16+FP8+MTP artifact to RTX PRO 6000
+  Blackwell (SM 12.0) — 2026-05-24, this session.
+- **Problem:** the forward path reads `self.wo_a.weight_scale_inv`
+  directly. PR #43290 added a `getattr(..., "weight_scale_inv", None) or
+  self.wo_a.weight_scale` fallback for artifacts using the W8A8 naming.
+  But that fallback is **not dynamo-safe** — dynamo's `_getattr_static`
+  intercepts the attribute lookup with a class-level resolver that fails
+  on dynamically-registered parameters like `weight_scale`. Triggers
+  `ObservedAttributeError` at trace time and crashes cudagraph capture
+  when the MTP block (BF16 wo_a, no scale attr at all) is exercised
+  during `profile_run`.
+- **Workaround in our repo:** `scripts/patch_wo_a_bf16_path.sh` —
+  switch the conditional to use `self.wo_a.weight.dtype ==
+  torch.bfloat16` (constant-foldable at trace time). Routes BF16 wo_a
+  through the existing `rocm_inv_rope_einsum` path instead of the FP8
+  einsum that needs scale.
+- **PR candidate:** the same patch upstream would let any Option-Y MTP
+  artifact (W4A16+FP8+MTP, NVFP4+FP8+MTP, future schemes) run with
+  cudagraph on SM 12.0 hardware. ~5 line change.
+- **Without this:** users have to set `--enforce-eager` → 10× decode
+  slowdown.
+
+### C17 ⏳ — `vllm`: SM 12.0 compressor / indexer.weights_proj hardcoded `quant_config=None`
+
+- **Upstream:** `vllm-project/vllm`
+- **Files:**
+  - `vllm/models/deepseek_v4/compressor.py` (`fused_wkv_wgate`,
+    `quant_config=None`)
+  - `vllm/models/deepseek_v4/nvidia/ops/attention.py:weights_proj`
+    (`quant_config=None`)
+- **Discovered while** loading the W4A16+FP8+MTP artifact on SM 12.0
+  via `jasl/vllm@ds4-sm120-preview-dev`.
+- **Problem:** the SM12 branch (and apparently upstream main) constructs
+  these modules with `quant_config=None` — i.e. as unquantized BF16
+  modules. But artifacts calibrated with FP8_BLOCK on the attention
+  path (per the predecessor's published recipe) DO quantize compressor /
+  indexer.weights_proj / indexer.wq_b. Loading then hits
+  `KeyError: 'layers.10.attn.mla_attn.compressor.fused_wkv_wgate.weight_scale'`
+  because the module has no slot for the scale.
+- **Workaround in our repo:** `scripts/dequant_compressor.py` —
+  one-time preprocess to dequantize 166 weights (FP8 + BF16 scale →
+  BF16 weight) and drop the orphan scales from the safetensors index.
+- **PR candidate (option A):** pass `quant_config=vllm_config.quant_config`
+  through to these MergedColumnParallelLinear / ReplicatedLinear
+  constructors, letting compressed-tensors allocate the scale slots.
+- **PR candidate (option B, deeper):** have the model class consult the
+  artifact's `quantization_config.config_groups` and instantiate
+  per-module accordingly.
+- **Related to:** vllm-project/vllm#31085 (the SM 12.0 NVFP4 MoE
+  selector also has assumptions that break for our scheme layout).
+
+### C18 ⏳ — `jasl/vllm`: `spinloop` extension `USE_SABI 3.11` incompatible with Python 3.10
+
+- **Upstream:** `jasl/vllm` (and possibly upstream when this code lands)
+- **File:** `CMakeLists.txt` (declares spinloop extension with `USE_SABI 3.11`)
+- **Discovered while** building `jasl/vllm@ds4-sm120-preview-dev` from
+  source against the Brev g7e.24xlarge box's Python 3.10 (2026-05-24).
+- **Problem:** `Py_LIMITED_API=0x030b0000` (Python 3.11) is set on the
+  spinloop compile flags, but `Py_buffer` and `PyBuffer_Release` were
+  only promoted to the stable ABI in Python 3.11. Python 3.10 headers
+  don't expose them, so the build fails with `error: 'Py_buffer' was
+  not declared in this scope`.
+- **Workaround in our repo:** drop the `USE_SABI 3.11` line:
+  `sed -i '/USE_SABI 3\.11/d' ~/src/vllm/CMakeLists.txt` (mentioned in
+  `RECIPE_RTX6000PRO.md` §1).
+- **PR candidate:** either bump the required Python version to 3.11+
+  documented in the build instructions, OR use `USE_SABI 3.10` for the
+  buffer-protocol path.
+
 ---
 
 ## Procedure when adding to this queue
