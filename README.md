@@ -336,8 +336,8 @@ pip install --quiet "flashinfer-python==0.6.8.post1" "flashinfer-cubin==0.6.8.po
 # 3) Apply patches against installed vLLM
 python scripts/patch_v4_forcausal_packed_mapping.py "$(python -c 'import vllm; print(vllm.__path__[0])')"
 python scripts/patch_mtp_packed_mapping.py        "$(python -c 'import vllm; print(vllm.__path__[0])')"
-bash   scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
-bash   scripts/patch_wo_a_bf16_path.sh
+python scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
+bash   scripts/patch_wo_a_bf16_path.sh             "$(python -c 'import vllm; print(vllm.__path__[0])')"
 
 # 4) Download artifact (159 GiB, ~1.5 min on Brev)
 pip install --user --quiet huggingface_hub hf-transfer
@@ -403,7 +403,9 @@ that's a follow-up project, not in scope for this repo.
 
 - DeepSeek for the base model + inference reference.
 - jasl (`jasl/vllm` and `jasl/vllm-ds4-sm120-harness`) for the working
-  vLLM build pin (`ds4-sm120-experimental` branch) and the benchmark
+  vLLM build pins (`ds4-sm120-experimental` for the original H200
+  calibration; `ds4-sm120-preview-dev` for the post-refactor RTX
+  6000 Pro Blackwell SM 12.0 serving path) and the benchmark
   harness.
 - `canada-quant/DeepSeek-V4-Flash-W4A16-FP8` (predecessor) for the
   proven recipe topology that this artifact extends with MTP.

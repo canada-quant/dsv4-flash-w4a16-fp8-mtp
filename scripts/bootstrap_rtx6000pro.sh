@@ -13,9 +13,11 @@
 #     /scratch and put everything there. Artifact (159 GiB) + venvs +
 #     vLLM build all fit with TB to spare.
 #   * SM 12.0 (Blackwell consumer/server family — distinct from B300's
-#     SM 10.0). Use jasl/vllm@ds4-sm120-experimental which is the SM12-tuned
-#     branch the predecessor canada-quant/DeepSeek-V4-Flash-W4A16-FP8
-#     ships against.
+#     SM 10.0). Uses jasl/vllm@ds4-sm120-preview-dev — jasl's current
+#     SM12-tuned branch, rebased on post-refactor upstream main. The
+#     older `ds4-sm120-experimental` branch (May 6) requires six extra
+#     patches and forces --enforce-eager; preview-dev needs only the
+#     standard packed_modules_mapping plus the dynamo-safe wo_a check.
 #   * No DLAMI bundled torch; need full CUDA toolkit for the source build.
 #
 # Idempotent — safe to re-run after partial completion.
@@ -132,9 +134,9 @@ for pr in "${VLLM_CHERRYPICKS[@]}"; do
     fi
 done
 
-# Source build of vLLM. ~30-45 min on 96 vCPU.
-# Non-editable (-e) because jasl's ds4-sm120-experimental branch's build
-# backend doesn't implement PEP 660 build_editable hook. Our packed_modules
+# Source build of vLLM. ~25-30 min on 96 vCPU.
+# Non-editable (-e) because the jasl/vllm SM12 branches' build backend
+# doesn't implement PEP 660 build_editable hook. Our packed_modules
 # patches write into the installed vllm package directly, so editable
 # isn't required.
 pip install --no-build-isolation -v --no-deps "$HOME/src/vllm" 2>&1 | tee /tmp/vllm_build.log

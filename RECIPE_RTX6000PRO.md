@@ -52,7 +52,7 @@ pip install --quiet "flashinfer-python==0.6.8.post1" "flashinfer-cubin==0.6.8.po
 python scripts/patch_v4_forcausal_packed_mapping.py "$(python -c 'import vllm; print(vllm.__path__[0])')"
 python scripts/patch_mtp_packed_mapping.py        "$(python -c 'import vllm; print(vllm.__path__[0])')"
 python scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
-bash   scripts/patch_wo_a_bf16_path.sh
+bash   scripts/patch_wo_a_bf16_path.sh             "$(python -c 'import vllm; print(vllm.__path__[0])')"
 
 # 4) Download artifact (~1.5 min on Brev's 10 Gbps egress)
 pip install --user --quiet huggingface_hub hf-transfer
@@ -310,7 +310,11 @@ substitute the suffix. The committed script has the fix.
 
 ## 4. Serve
 
-After patches + dequant, launch with **`--enforce-eager`**:
+After patches + dequant, launch the serve script. It runs with full
+`torch.compile` + cudagraph by default (the dynamo-safe wo_a fix in
+§3.3 makes that possible) — **do NOT add `--enforce-eager`**; the
+eager-mode path is ~10× slower (see "CUDA graphs work — and matter"
+below).
 
 ```bash
 # TP=2 (one PCIe-switch-bound GPU pair, GPUs 0,1)
@@ -429,7 +433,7 @@ TP=2 + TP=4 + docs is ~$20-30.**
 | File layout | post-refactor `vllm/models/deepseek_v4/nvidia/*` | same (preview-dev was rebased) |
 | `packed_modules_mapping` patches | required | required (same patches) |
 | `weight_scale_inv → weight_scale` fallback | done via PR #43290 cherry-pick | needs §3.2 patch (separate file path under `nvidia/ops/`) |
-| BF16 wo_a (MTP block) | works via cudagraph w/ static class type | needs §3.3 runtime branch + `--enforce-eager` |
+| BF16 wo_a (MTP block) | works via cudagraph w/ static class type | needs §3.3 runtime branch with the **dynamo-safe `weight.dtype == bfloat16` check** so cudagraph still captures (no `--enforce-eager` needed) |
 | FP8 compressor / indexer.weights_proj / wq_b loading | works (different code path) | needs §3.4 dequant preprocess |
 | Rust extension build | not present | requires Rust toolchain + setuptools-rust |
 | `humming-kernels` import | not used | hard-imported at quant_config load |
