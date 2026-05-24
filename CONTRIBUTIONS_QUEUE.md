@@ -189,9 +189,10 @@ maintainers comment on direction before the PR lands.
 - **Action:** update our bootstrap script to use `HF_XET_HIGH_PERFORMANCE=1`
   on the next bootstrap revision; no upstream issue needed.
 
-### C16 ⏳ — `vllm`: `nvidia/ops/attention.py:wo_a` access pattern is dynamo-unsafe
+### C16 🔴 — `vllm`: `nvidia/ops/attention.py:wo_a` access pattern is dynamo-unsafe
 
 - **Upstream:** `vllm-project/vllm`
+- **Issue:** https://github.com/vllm-project/vllm/issues/43511 (filed 2026-05-24)
 - **File:** `vllm/models/deepseek_v4/nvidia/ops/attention.py:370`
 - **Discovered while** porting the W4A16+FP8+MTP artifact to RTX PRO 6000
   Blackwell (SM 12.0) — 2026-05-24, this session.
@@ -215,9 +216,10 @@ maintainers comment on direction before the PR lands.
 - **Without this:** users have to set `--enforce-eager` → 10× decode
   slowdown.
 
-### C17 ⏳ — `vllm`: SM 12.0 compressor / indexer.weights_proj hardcoded `quant_config=None`
+### C17 🔴 — `vllm`: SM 12.0 compressor / indexer.weights_proj hardcoded `quant_config=None`
 
 - **Upstream:** `vllm-project/vllm`
+- **Issue:** https://github.com/vllm-project/vllm/issues/43512 (filed 2026-05-24)
 - **Files:**
   - `vllm/models/deepseek_v4/compressor.py` (`fused_wkv_wgate`,
     `quant_config=None`)
@@ -244,9 +246,10 @@ maintainers comment on direction before the PR lands.
 - **Related to:** vllm-project/vllm#31085 (the SM 12.0 NVFP4 MoE
   selector also has assumptions that break for our scheme layout).
 
-### C18 ⏳ — `jasl/vllm`: `spinloop` extension `USE_SABI 3.11` incompatible with Python 3.10
+### C18 🔴 — `jasl/vllm`: `spinloop` extension `USE_SABI 3.11` incompatible with Python 3.10
 
 - **Upstream:** `jasl/vllm` (and possibly upstream when this code lands)
+- **Issue:** https://github.com/jasl/vllm/issues/11 (filed 2026-05-24)
 - **File:** `CMakeLists.txt` (declares spinloop extension with `USE_SABI 3.11`)
 - **Discovered while** building `jasl/vllm@ds4-sm120-preview-dev` from
   source against the Brev g7e.24xlarge box's Python 3.10 (2026-05-24).
