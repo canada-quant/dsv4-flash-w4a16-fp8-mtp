@@ -1,11 +1,20 @@
 # Phase 2 benchmark log
 
 All raw benchmark outputs land under `benchmarks/phase2/` (H200) and
-`benchmarks/rtx6000pro/` (RTX PRO 6000 Blackwell). Each row in this file
-points at the raw JSON / JSONL for traceability. The H200 capacity block expired
-2026-05-23 04:30 PDT — those raw logs are the proof. The RTX 6000 Pro run is
-from a Brev `familiar-teal-worm` instance (4× RTX PRO 6000 Blackwell, SM 12.0)
-on 2026-05-23 and is the second hardware demonstration of the artifact.
+`benchmarks/rtx6000pro/` (RTX PRO 6000 Blackwell).
+
+**Both hardware platforms ran the same artifact —
+`canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP`** (this repo). H200 was
+the calibration platform AND the original benchmark platform; RTX 6000
+Pro is a second hardware demonstration. The B300 NVFP4 artifact lives
+in the sibling repo `canada-quant/dsv4-flash-nvfp4-fp8-mtp` — none of
+the numbers in this file come from B300.
+
+Each row in this file points at the raw JSON / JSONL for traceability.
+The H200 capacity block expired 2026-05-23 04:30 PDT — those raw logs
+are the proof. The RTX 6000 Pro run is from a Brev `familiar-teal-worm`
+instance (4× RTX PRO 6000 Blackwell Server Edition, SM 12.0) on
+2026-05-23/24.
 
 ## Predecessor reference numbers (cited from `pastapaul/DeepSeek-V4-Flash-W4A16-FP8` HF card)
 
@@ -62,14 +71,26 @@ lacks NVLink and the custom AR kernel fails with CUDA invalid-argument.
 | 2026-05-24 MTP acceptance bs=4 | same | 68.41% (3320/4853) | 71.17% (3397/4773) | n/a | (in throughput JSON) |
 | 2026-05-24 MTP acceptance bs=16 | same | 71.63% (13647/19051) | 71.00% (13579/19125) | n/a | (in throughput JSON) |
 
-**Headline:** RTX 6000 Pro Blackwell **fully beats H200 in output tok/s**
-at every batch size:
-- bs=1: TP=4 107.3 tok/s vs H200 88.4 (+21%)
-- bs=4: TP=4 221.5 tok/s vs H200 138.8 (+60%)
-- bs=16: TP=4 584.0 tok/s vs H200 367.1 (+59%)
+**Headline:** Per-replica, RTX 6000 Pro Blackwell **beats the
+single-replica H200 TP=2 throughput** at every batch size:
+- bs=1: RTX TP=4 107.3 vs H200 TP=2 88.4 tok/s (+21%)
+- bs=4: RTX TP=4 221.5 vs H200 TP=2 138.8 tok/s (+60%)
+- bs=16: RTX TP=4 584.0 vs H200 TP=2 367.1 tok/s (+59%)
+
+**Important framing:** the H200 numbers are **per-replica TP=2 (1 of 4
+possible replicas on the 8-GPU `p5en.48xlarge` box)**, not the H200
+node total. A fully utilized H200 box (4× TP=2 replicas) would put
+out ~4× the per-replica numbers (~353 tok/s at bs=1, ~1468 at bs=16).
+The RTX 6000 Pro `g7e.24xlarge` is 4 GPUs total, so it can host either
+2× TP=2 replicas or 1× TP=4.
+
+At node level: H200 wins absolute throughput but RTX 6000 Pro is
+~2.7× cheaper per output token at bs=1 ($278 vs $101 per 1000 tok/h
+based on $98/h vs $19.92/h for the two boxes). See the README for the
+full $/token table.
 
 H200 still wins on per-token TPOT median (better-tuned Hopper kernel
-cost), but RTX 6000 Pro is the clear throughput winner.
+cost) — important when you care about p50 latency for a single user.
 
 **Speedup from re-enabling cudagraph (vs the 2026-05-23 eager-mode run):**
 

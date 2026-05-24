@@ -231,17 +231,27 @@ verify-before-acting on summaries, subagent briefing standards).
 
 ## Hardware
 
-Built on AWS `p5en.48xlarge` (8× H200 SXM5, Hopper SM 9.0a, 143 GB
-HBM3e per GPU). vLLM serve uses TP=2 (2 GPUs per replica) per the
-sibling artifact's published guidance — TP=4 underutilizes Marlin
-tensor cores on per-rank expert shards for our W4A16 layout.
+This artifact was **both calibrated and originally benchmarked on
+H200** (AWS `p5en.48xlarge`, 8× H200 SXM5, Hopper SM 9.0a, 143 GB
+HBM3e per GPU). vLLM serve used TP=2 (2 GPUs per replica) — TP=4
+underutilizes Marlin tensor cores on per-rank expert shards for our
+W4A16 layout, so the H200 box is best run as 4× TP=2 replicas behind a
+load balancer.
 
-- Phase 2 GPTQ calibration: 15.09h oneshot + ~16 min save = ~15.4h end-to-end on 8× H200. Per-subgraph cadence stabilized at ~20 min/subgraph across 44 subgraphs (43 MoE main + 1 MTP — MTP subgraph is a no-op per Option Y).
+(An earlier calibration attempt on **B300** (`p6-b300.48xlarge`, SM
+10.0) was abandoned due to multi-rank NCCL friction on the
+decoupled-MoE-expert shard. The B300 GPTQ scaffolds that came out of
+that detour are kept in `scripts/loadtest_sharded.py` and
+`scripts/multirank_patches.py` for reference. The **NVFP4 sibling
+artifact** at `canada-quant/dsv4-flash-nvfp4-fp8-mtp` is a separate
+project that was calibrated on B300 — that's distinct from this repo.)
+
+- Phase 2 GPTQ calibration on H200: 15.09h oneshot + ~16 min save = ~15.4h end-to-end. Per-subgraph cadence stabilized at ~20 min/subgraph across 44 subgraphs (43 MoE main + 1 MTP — MTP subgraph is a no-op per Option Y).
 - Phase 2 GPTQ output: 4 shards, 159 GB total.
 - Postprocess: ~6 min wall (single-process, 4 shards rewritten
   atomically with FP32 restore + alias injection).
 
-### Also runs on RTX PRO 6000 Blackwell (SM 12.0) — and beats H200 on throughput
+### Also runs on RTX PRO 6000 Blackwell (SM 12.0) — competitive per replica, ~5× cheaper per output token
 
 Second hardware demonstration on 2026-05-24: Brev `g7e.24xlarge` with
 4× NVIDIA RTX PRO 6000 Blackwell Server Edition (96 GiB HBM3 each).
@@ -249,21 +259,47 @@ Full `torch.compile` + cudagraph stack enabled. Both TP=2 and TP=4
 verified: chat-smoke 4/4 PASS, MTP acceptance 68-72%, Marlin
 TP > 2 bug (`vllm-project/vllm#41511`) did **not** fire.
 
-**RTX 6000 Pro (cudagraph, TP=4) vs H200 (compile, TP=2):**
+#### Per-replica throughput
 
-| Metric | H200 TP=2 | RTX 6000 Pro TP=4 | Δ |
+H200 numbers are **per-replica TP=2** (1 of 4 possible replicas on the
+8-GPU `p5en.48xlarge`). RTX numbers are per-replica TP=2 or TP=4 on the
+4-GPU `g7e.24xlarge`.
+
+| Metric | H200 TP=2 (1 replica) | RTX 6000 Pro TP=2 (1 replica) | RTX 6000 Pro TP=4 (1 replica) |
 |---|---|---|---|
-| bs=1 output tok/s | 88.35 | **107.32** | **+21%** |
-| bs=1 TPOT median (ms) | **6.02** | 7.77 | H200 wins |
-| bs=4 output tok/s | 138.80 | **221.52** | **+60%** |
-| bs=4 TPOT median (ms) | 9.50 | **11.32** | H200 wins |
-| bs=16 output tok/s | 367.13 | **584.04** | **+59%** |
-| MTP acceptance bs=1 | 89.1% / 69.94% | 68.15% | same band |
+| bs=1 output tok/s | 88.35 | 98.83 | **107.32** |
+| bs=1 TPOT median (ms) | **6.02** | 8.55 | 7.77 |
+| bs=4 output tok/s | 138.80 | 219.53 | **221.52** |
+| bs=16 output tok/s | 367.13 | 482.61 | **584.04** |
+| MTP acceptance bs=1 | 89.1% / 69.94% | 71.39% | 68.15% |
 
-H200 still wins per-token latency on the cheapest batch, but RTX 6000
-Pro has more aggregate FP8 / W4A16 throughput and **wins on total
-tok/s at every batch size**. The MoE weights stayed W4A16 (Marlin),
-attention stayed FP8_BLOCK, and the MTP block stayed BF16 throughout.
+Per-replica, RTX 6000 Pro **wins on output throughput at every batch
+size** while H200 still wins per-token TPOT median.
+
+#### Node-level throughput (more apples-to-apples)
+
+The H200 box is 8 GPUs (`p5en.48xlarge`, ~$98/h on AWS); the RTX 6000
+Pro box is 4 GPUs (`g7e.24xlarge`, $19.92/h on Brev). Multiplying by
+the number of replicas each can host:
+
+| Box | Replicas | bs=1 total tok/s | bs=16 total tok/s | $/h | $/(1000 tok/h) at bs=1 |
+|---|---|---|---|---|---|
+| `p5en.48xlarge` (8× H200) | 4× TP=2 | 4 × 88.35 = **~353** | 4 × 367.13 = **~1468** | $98 | **$278** |
+| `g7e.24xlarge` (4× RTX 6000 Pro) | 2× TP=2 | 2 × 98.83 = **~198** | 2 × 482.61 = **~965** | $19.92 | **$101** |
+| `g7e.24xlarge` (4× RTX 6000 Pro) | 1× TP=4 | 107.32 | 584.04 | $19.92 | $186 |
+
+**Cost-per-token at bs=1 (interactive workload): RTX 6000 Pro 2×TP=2
+is ~2.7× cheaper than H200 4×TP=2.** At bs=16 the gap narrows because
+the H200's per-replica throughput scales better with batch — node total
+is ~1500 tok/s on H200 vs ~965 on RTX (per-replica × 2). H200 wins
+absolute throughput when you can fill it; RTX wins on $/token unless
+you genuinely need 1500+ tok/s of aggregate output.
+
+(Aggregate "Total replicas × per-replica" numbers above are
+extrapolated from the measured single-replica runs; we benchmarked
+single replicas only.)
+
+#### Patches required
 
 | Patches required | H200 | RTX 6000 Pro |
 |---|---|---|
@@ -274,10 +310,75 @@ attention stayed FP8_BLOCK, and the MTP block stayed BF16 throughout.
 | `--disable-custom-all-reduce` (no NVLink) | n/a | ✓ |
 | CMakeLists `USE_SABI 3.11` removal for Py 3.10 | n/a | ✓ |
 
-Full reproduction recipe in [`RECIPE_RTX6000PRO.md`](RECIPE_RTX6000PRO.md).
+#### Quick start (RTX 6000 Pro)
+
+```bash
+# From a fresh Brev g7e.24xlarge (Ubuntu 22.04, CUDA 12.9 + driver
+# 580 pre-installed):
+sudo apt-get update && sudo apt-get install -y git
+sudo ln -sfn /opt/dlami/nvme /scratch && sudo chown -h "$USER:$USER" /scratch
+cd /scratch
+git clone https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp.git
+cd dsv4-flash-w4a16-fp8-mtp
+
+# 1) Bootstrap (~25 min for vLLM source build)
+bash scripts/bootstrap_rtx6000pro.sh
+
+# 2) Extra deps (Rust, humming, flashinfer pins)
+source ~/venv-serve/bin/activate
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+. "$HOME/.cargo/env"
+pip install --quiet setuptools-rust
+pip install --quiet git+https://github.com/inclusionAI/humming.git
+pip install --quiet "flashinfer-python==0.6.8.post1" "flashinfer-cubin==0.6.8.post1" \
+    "numba==0.65.0" "tilelang==0.1.9" "apache-tvm-ffi==0.1.9" "fastsafetensors>=0.2.2"
+
+# 3) Apply patches against installed vLLM
+python scripts/patch_v4_forcausal_packed_mapping.py "$(python -c 'import vllm; print(vllm.__path__[0])')"
+python scripts/patch_mtp_packed_mapping.py        "$(python -c 'import vllm; print(vllm.__path__[0])')"
+bash   scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
+bash   scripts/patch_wo_a_bf16_path.sh
+
+# 4) Download artifact (159 GiB, ~1.5 min on Brev)
+pip install --user --quiet huggingface_hub hf-transfer
+export PATH="$HOME/.local/bin:$PATH"
+hf download canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP \
+    --local-dir /scratch/weights/w4a16-fp8-mtp-gptq
+
+# 5) Dequantize compressor/indexer modules (one-time, ~1.5 min)
+python scripts/dequant_compressor.py /scratch/weights/w4a16-fp8-mtp-gptq
+
+# 6) Serve TP=2 on GPUs 0+1 (or TP=4 with 0,1,2,3)
+CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_rtx6000pro.sh \
+    /scratch/weights/w4a16-fp8-mtp-gptq 8000 2
+
+# 7) Smoke + bench (in another shell once /health is 200)
+bash scripts/chat_smoke.sh http://localhost:8000
+bash scripts/bench_rtx6000pro_suite.sh http://localhost:8000 2 1
+```
+
+For full reproduction details (patch rationale, debug notes, future
+work): [`RECIPE_RTX6000PRO.md`](RECIPE_RTX6000PRO.md).
+
 Raw JSONs + summary:
 - [`benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md`](benchmarks/rtx6000pro/2026-05-24-cudagraph-summary.md) (headline)
 - `benchmarks/rtx6000pro/tp{2,4}_2026-05-24T*/bench_mtp_bs{1,4,16}.json`
+
+#### Scope clarification: this is the W4A16 artifact, not NVFP4
+
+This repo (`canada-quant/dsv4-flash-w4a16-fp8-mtp`) ships the
+**W4A16+FP8+MTP** quantization. The Blackwell-native **NVFP4+FP8+MTP**
+artifact lives in the sibling repo
+[`canada-quant/dsv4-flash-nvfp4-fp8-mtp`](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-NVFP4-FP8-MTP),
+calibrated on B300 (SM 10.0) hardware.
+
+NVFP4 native MoE kernels for SM 12.0 (RTX 6000 Pro Blackwell) exist in
+upstream vLLM (`csrc/quantization/fp4/nvfp4_scaled_mm_sm120_kernels.cu`)
+but aren't being picked by the backend selector
+([vllm-project/vllm#31085](https://github.com/vllm-project/vllm/issues/31085)).
+Once that fix lands, running the sibling's NVFP4 artifact on RTX 6000
+Pro would unlock a tighter expert kernel than the W4A16 Marlin path —
+that's a follow-up project, not in scope for this repo.
 
 ---
 

@@ -4,6 +4,14 @@ End-to-end recipe to serve `canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP`
 on **NVIDIA RTX PRO 6000 Blackwell Server Edition** GPUs (96 GiB HBM3
 each, SM 12.0). Targets TP=2 (2× GPU pair) and TP=4 (all four GPUs).
 
+This is the **W4A16+FP8+MTP** path. NVFP4 on Blackwell is a separate
+artifact (sibling repo `canada-quant/dsv4-flash-nvfp4-fp8-mtp`,
+calibrated on B300 SM 10.0) and requires upstream
+[vllm-project/vllm#31085](https://github.com/vllm-project/vllm/issues/31085)
+to land before the native SM 12.0 NVFP4 MoE kernels become selectable.
+Out of scope for this recipe; see the README §"Scope clarification" for
+the boundary.
+
 If you came here from the H200 recipe in `README.md`: the H200 path
 runs the same artifact through **upstream `vllm-project/vllm` HEAD**
 with four cherry-picked PRs. The RTX 6000 Pro path uses **`jasl/vllm`
@@ -12,6 +20,74 @@ several additional patches that compensate for the SM12 branch's
 narrower assumptions about which attention modules are quantized.
 See "Why the H200 patches aren't enough" at the bottom for the full
 delta.
+
+---
+
+## TL;DR — Quick start (paste into a fresh Brev `g7e.24xlarge`)
+
+```bash
+# Prereqs that Brev ships pre-installed: Ubuntu 22.04, NVIDIA driver
+# 580.x, CUDA 12.9 toolkit. The script below installs CUDA 13.0
+# alongside (needed for torch 2.11+cu130).
+
+sudo apt-get update && sudo apt-get install -y git
+sudo ln -sfn /opt/dlami/nvme /scratch && sudo chown -h "$USER:$USER" /scratch
+cd /scratch
+git clone https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp.git
+cd dsv4-flash-w4a16-fp8-mtp
+
+# 1) Build vLLM from jasl/vllm@ds4-sm120-preview-dev (~25 min)
+bash scripts/bootstrap_rtx6000pro.sh
+
+# 2) Extra deps (Rust, humming, flashinfer pins)
+source ~/venv-serve/bin/activate
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+. "$HOME/.cargo/env"
+pip install --quiet setuptools-rust
+pip install --quiet git+https://github.com/inclusionAI/humming.git
+pip install --quiet "flashinfer-python==0.6.8.post1" "flashinfer-cubin==0.6.8.post1" \
+    "numba==0.65.0" "tilelang==0.1.9" "apache-tvm-ffi==0.1.9" "fastsafetensors>=0.2.2"
+
+# 3) Apply 4 patches against the installed vLLM
+python scripts/patch_v4_forcausal_packed_mapping.py "$(python -c 'import vllm; print(vllm.__path__[0])')"
+python scripts/patch_mtp_packed_mapping.py        "$(python -c 'import vllm; print(vllm.__path__[0])')"
+python scripts/patch_nvidia_attn_scale.py         "$(python -c 'import vllm; print(vllm.__path__[0])')"
+bash   scripts/patch_wo_a_bf16_path.sh
+
+# 4) Download artifact (~1.5 min on Brev's 10 Gbps egress)
+pip install --user --quiet huggingface_hub hf-transfer
+export PATH="$HOME/.local/bin:$PATH"
+hf download canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP \
+    --local-dir /scratch/weights/w4a16-fp8-mtp-gptq
+
+# 5) Dequantize compressor + indexer modules (~1.5 min, one-time)
+python scripts/dequant_compressor.py /scratch/weights/w4a16-fp8-mtp-gptq
+
+# 6) Serve (TP=2 on GPUs 0+1 is the recommended config — 2 replicas
+#    fit on the 4-GPU box and give best aggregate $/token)
+CUDA_VISIBLE_DEVICES=0,1 bash scripts/serve_rtx6000pro.sh \
+    /scratch/weights/w4a16-fp8-mtp-gptq 8000 2 &
+# wait for /health 200, then benchmark:
+while ! curl -fsS http://localhost:8000/health; do sleep 5; done
+bash scripts/chat_smoke.sh http://localhost:8000
+bash scripts/bench_rtx6000pro_suite.sh http://localhost:8000 2 1
+```
+
+**Expected first-replica throughput (with cudagraph + MTP-spec k=1):**
+
+| Batch | Output tok/s | TPOT median (ms) | MTP acceptance |
+|---|---|---|---|
+| bs=1 | ~99 (TP=2) / ~107 (TP=4) | ~8.5 (TP=2) / ~7.8 (TP=4) | 68-71% |
+| bs=4 | ~220 | ~12-14 | 68-71% |
+| bs=16 | ~483 (TP=2) / ~584 (TP=4) | ~25-30 | 71% |
+
+**Wall-clock for the full flow on a fresh box:** ~35-40 minutes
+including the vLLM build, deps, artifact download, dequant, and first
+serve startup. After that, every restart is ~3 min model load +
+~30 s cudagraph capture.
+
+For the detailed walkthrough — patch rationale, debug notes, future
+work — keep reading.
 
 ---
 

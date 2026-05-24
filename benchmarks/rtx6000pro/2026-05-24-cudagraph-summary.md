@@ -56,11 +56,13 @@ prompts at concurrency N).
 | bs=16 output tok/s | 147.00 | 482.61 | **3.28×** |
 | bs=16 TPOT median (ms) | 93.57 | 30.08 | **3.11×** |
 
-### Comparison: RTX 6000 Pro cudagraph vs H200 compile+cudagraph
+### Comparison: per-replica throughput (RTX 6000 Pro vs single H200 TP=2 replica)
 
 H200 numbers from `benchmarks/phase2/2026-05-22T195133Z-throughput-summary.md`.
+These are **per-replica** numbers — the H200 was measured on 1 of 4
+possible TP=2 pairs on an 8-GPU `p5en.48xlarge`, NOT the full node.
 
-| Metric | H200 TP=2 | RTX TP=2 | RTX TP=4 |
+| Metric | H200 TP=2 (1 replica of 4) | RTX TP=2 (1 replica of 2) | RTX TP=4 (1 replica of 1) |
 |---|---|---|---|
 | bs=1 tok/s | 88.35 | **98.83** | **107.32** |
 | bs=1 TPOT ms | **6.02** | 8.55 | 7.77 |
@@ -73,11 +75,38 @@ H200 numbers from `benchmarks/phase2/2026-05-22T195133Z-throughput-summary.md`.
 **At bs=1**, H200 wins on per-token latency (TPOT) — RTX is +42% slower
 per token but +21% higher steady-state throughput. The throughput
 divergence is because RTX 6000 Pro Blackwell has more raw FP8 / W4A16
-compute per cluster; the TPOT gap is from the H200's slightly
-better-tuned Hopper kernel cost.
+compute per cluster; the TPOT gap is from H200's slightly better-tuned
+Hopper kernel cost.
 
-**At bs=16**, RTX TP=4 hits **584 tok/s** vs H200's 367 — a 1.59×
-improvement at the parallel-batch end of the curve.
+**At bs=16**, RTX TP=4 hits **584 tok/s** vs H200's 367 (per-replica) —
+a 1.59× per-replica improvement at the parallel-batch end of the curve.
+
+### Comparison: node-level aggregate throughput + $ per output token
+
+Extrapolated from single-replica measurements by multiplying by the
+maximum replica count each box can host (single-process serve only —
+real-world load balancers may not achieve perfect scaling, so treat as
+upper-bound estimate).
+
+| Box | $/h | Replica config | bs=1 total tok/s | bs=16 total tok/s | $/(1000 tok/h) at bs=1 | $/(1000 tok/h) at bs=16 |
+|---|---|---|---|---|---|---|
+| `p5en.48xlarge` (8× H200) | $98 | 4× TP=2 | ~353 | ~1468 | **$278** | **$67** |
+| `g7e.24xlarge` (4× RTX 6000 Pro) | $19.92 | 2× TP=2 | ~198 | ~965 | **$101** | **$21** |
+| `g7e.24xlarge` (4× RTX 6000 Pro) | $19.92 | 1× TP=4 | 107 | 584 | $186 | $34 |
+
+**Cost-per-token verdict:**
+
+- **At bs=1 (interactive workload):** RTX 6000 Pro 2×TP=2 is **~2.7×
+  cheaper** per output token than fully utilized H200.
+- **At bs=16 (batched/serving):** RTX 6000 Pro 2×TP=2 is **~3.2×
+  cheaper** per output token than fully utilized H200.
+
+When you need aggregate throughput above ~1000 tok/s, H200 wins on
+absolute capacity (and may be the only option). For total throughput up
+to ~1000 tok/s, RTX 6000 Pro is dramatically cheaper.
+
+(Brev `g7e.24xlarge` pricing as of 2026-05-23. AWS `p5en.48xlarge`
+on-demand pricing from public listings as of 2026-05.)
 
 ### What's still leaving headroom on RTX 6000 Pro
 
