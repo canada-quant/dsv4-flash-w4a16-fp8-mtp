@@ -131,6 +131,15 @@ Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%
 | [`vllm-project/vllm#43288`](https://github.com/vllm-project/vllm/pull/43288) | `scale_fmt` defensive `.get()` + BF16 `getattr` wrap | open |
 | [`vllm-project/vllm#43290`](https://github.com/vllm-project/vllm/pull/43290) | `weight_scale_inv`-or-`weight_scale` fallback | open |
 | [`vllm-project/vllm#43319`](https://github.com/vllm-project/vllm/pull/43319) | MTP-quant-detect from safetensors header + BF16 `wo_a` fallback path | open |
+| [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) (tonyliu312) | Marlin MoE: include SM 12.x in default arch list — eliminates JIT-PTX corruption on Blackwell consumer/server SKUs | open, member-approved, blocked on core-maintainer SM120 policy review; canada-quant evidence [posted](https://github.com/vllm-project/vllm/pull/40923#issuecomment-4530927937) 2026-05-25 |
+| [`jasl/vllm#12`](https://github.com/jasl/vllm/issues/12) | Token-stream corruption under concurrent thinking-mode on SM 12.0 W4A16 Marlin MoE | open, [updated](https://github.com/jasl/vllm/issues/12#issuecomment-4530929146) 2026-05-25 with PR #40923 result (corruption gone, but second kernel race surfaces as crash) |
+
+## Investigation findings (RTX PRO 6000 SM 12.0)
+
+The W4A16-MTP path on this artifact has two known issues on RTX PRO 6000 + current vLLM that the team has been investigating, both documented in [`docs/findings/sm12x_token_corruption_2026_05_24.md`](docs/findings/sm12x_token_corruption_2026_05_24.md):
+
+1. **Compressor/indexer FP8 shipping bug** — fixed 2026-05-24 by dequantizing those weights in-artifact to BF16. Artifact now loads cleanly on modern vLLM.
+2. **Marlin MoE concurrent-decode kernel race** under thinking-mode at c≥2. Partial fix from upstream [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) eliminates the JIT-PTX-fallback corruption (14/30 → 0/30 on AIME c=4), but a second race in the W4A16 Marlin MoE decode path on SM 12.0 still surfaces as `CUDA illegal memory access` under sustained concurrent thinking-mode load. **Workaround**: use the NVFP4 sibling [`canada-quant/dsv4-flash-nvfp4-fp8-mtp`](https://github.com/canada-quant/dsv4-flash-nvfp4-fp8-mtp) for batched thinking-mode on SM 12.0. This W4A16-MTP artifact works cleanly for sequential thinking-mode (c=1) and any batched chat-mode (no thinking) workload.
 
 ## License
 
