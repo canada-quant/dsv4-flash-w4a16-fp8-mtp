@@ -134,12 +134,29 @@ Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%
 | [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) (tonyliu312) | Marlin MoE: include SM 12.x in default arch list — eliminates JIT-PTX corruption on Blackwell consumer/server SKUs | open, member-approved, blocked on core-maintainer SM120 policy review; canada-quant evidence [posted](https://github.com/vllm-project/vllm/pull/40923#issuecomment-4530927937) 2026-05-25 |
 | [`jasl/vllm#12`](https://github.com/jasl/vllm/issues/12) | Token-stream corruption under concurrent thinking-mode on SM 12.0 W4A16 Marlin MoE | open, [updated](https://github.com/jasl/vllm/issues/12#issuecomment-4530929146) 2026-05-25 with PR #40923 result (corruption gone, but second kernel race surfaces as crash) |
 
+## vLLM patch series — [`vllm-patches/`](vllm-patches/)
+
+The minimum patch series we apply on top of `jasl/vllm@a02a3778f` to serve this artifact on RTX PRO 6000 (SM 12.0). Each patch is documented with its upstream PR link, status, and rationale in [`vllm-patches/README.md`](vllm-patches/README.md):
+
+| Patch | Purpose | Upstream |
+|---|---|---|
+| `0001_marlin_moe_archs_40923.patch` | Build native sm_120a Marlin MoE cubins (eliminates JIT-PTX corruption on Blackwell) | [PR #40923](https://github.com/vllm-project/vllm/pull/40923) (open) |
+| `0002_marlin_moe_workspace_4x.patch` | Oversize Marlin MoE lock-array workspace 4× (defensive) | (to file as follow-up to #40923) |
+| `0003_marlin_moe_c_tmp_36889.patch` | Drop `min()` clamp on `c_tmp` FP32 reduce buffer (block-decode safety) | [PR #36889](https://github.com/vllm-project/vllm/pull/36889) (closed, re-file candidate) |
+
+Patches 0002 + 0003 were built and verified to compile cleanly against `jasl/vllm@a02a3778f + #40923` (new `_moe_C.abi3.so` = 181,697,240 bytes, +1,784 vs unpatched). Functional verification on this artifact is currently blocked by a separate safetensors naming issue documented below.
+
 ## Investigation findings (RTX PRO 6000 SM 12.0)
 
-The W4A16-MTP path on this artifact has two known issues on RTX PRO 6000 + current vLLM that the team has been investigating, both documented in [`docs/findings/sm12x_token_corruption_2026_05_24.md`](docs/findings/sm12x_token_corruption_2026_05_24.md):
+The W4A16-MTP path on this artifact has known issues on RTX PRO 6000 + current vLLM that the team has been investigating, all documented in [`docs/findings/`](docs/findings/):
 
-1. **Compressor/indexer FP8 shipping bug** — fixed 2026-05-24 by dequantizing those weights in-artifact to BF16. Artifact now loads cleanly on modern vLLM.
-2. **Marlin MoE concurrent-decode kernel race** under thinking-mode at c≥2. Partial fix from upstream [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) eliminates the JIT-PTX-fallback corruption (14/30 → 0/30 on AIME c=4), but a second race in the W4A16 Marlin MoE decode path on SM 12.0 still surfaces as `CUDA illegal memory access` under sustained concurrent thinking-mode load. **Workaround**: use the NVFP4 sibling [`canada-quant/dsv4-flash-nvfp4-fp8-mtp`](https://github.com/canada-quant/dsv4-flash-nvfp4-fp8-mtp) for batched thinking-mode on SM 12.0. This W4A16-MTP artifact works cleanly for sequential thinking-mode (c=1) and any batched chat-mode (no thinking) workload.
+1. **Compressor/indexer FP8 shipping bug** ([`session_summary_2026_05_24.md`](docs/findings/session_summary_2026_05_24.md)) — fixed 2026-05-24 by dequantizing those weights in-artifact to BF16. Artifact now loads cleanly on modern vLLM via the older `jasl/vllm@c79225692` build that was installed at the time.
+
+2. **Marlin MoE concurrent-decode kernel race** ([`sm12x_token_corruption_2026_05_24.md`](docs/findings/sm12x_token_corruption_2026_05_24.md)) under thinking-mode at c≥2. Partial fix from upstream [`vllm-project/vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) eliminates the JIT-PTX-fallback corruption (14/30 → 0/30 on AIME c=4), but a second race in the W4A16 Marlin MoE decode path on SM 12.0 surfaces as `CUDA illegal memory access` under sustained concurrent thinking-mode load. **Workaround**: use the NVFP4 sibling [`canada-quant/dsv4-flash-nvfp4-fp8-mtp`](https://github.com/canada-quant/dsv4-flash-nvfp4-fp8-mtp) for batched thinking-mode on SM 12.0. This W4A16-MTP artifact works cleanly for sequential thinking-mode (c=1) and any batched chat-mode (no thinking) workload.
+
+3. **Marlin c_tmp + workspace 4× patches built** ([`cardd_marlin_patches_built_artifact_blocker_2026_05_25.md`](docs/findings/cardd_marlin_patches_built_artifact_blocker_2026_05_25.md)) — patches 0002 + 0003 in `vllm-patches/` were cherry-picked (PR #36889 `c_tmp` clamp removal + workspace 4× oversize). They compile cleanly, produce a new `_moe_C.abi3.so` (+1,784 bytes). Functional verification is blocked by item (4) below.
+
+4. **Safetensors `.weight_scale` naming blocker** ([`cardd_artifact_weight_scale_naming_blocker_2026_05_25.md`](docs/findings/cardd_artifact_weight_scale_naming_blocker_2026_05_25.md)) — all 33,239 quantized scale tensors in this artifact's safetensors are named `<module>.weight_scale` rather than the canonical `<module>.weight_scale_inv`. Mathematical content is identical (the `llmcompressor.model_free_ptq` path emits this naming), but current upstream vLLM's loader is strict and rejects the artifact. Filed as [`vllm-project/vllm#43564`](https://github.com/vllm-project/vllm/issues/43564) with a proposed two-line defensive `getattr` patch + tagged `@kylesayrs`. **The fix can land via either**: (a) a vLLM PR that accepts both naming conventions, or (b) renaming `.weight_scale` → `.weight_scale_inv` in this artifact's safetensors header (a metadata-only rewrite — see [`scripts/rename_weight_scale_to_inv.py`](scripts/rename_weight_scale_to_inv.py); no re-quantization).
 
 ## License
 
