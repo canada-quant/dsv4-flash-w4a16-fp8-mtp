@@ -1,0 +1,588 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-27T05:04:11.311861+00:00",
+    "dataset": "openai/gsm8k",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 8,
+    "max_tokens": 2048,
+    "n": 50
+  },
+  "totals": {
+    "correct": 50,
+    "errors": 0,
+    "wallclock_s": 80.36693215370178,
+    "finish_reasons": {
+      "stop": 50
+    },
+    "strict_match_score": 1.0
+  },
+  "mtp_delta": {
+    "d_drafts": 3368.0,
+    "d_draft_tokens": 3368.0,
+    "d_accepted_tokens": 3093.0,
+    "acceptance_rate": 0.9183491686460807,
+    "tokens_per_step": 1.9183491686460807
+  },
+  "pre_metrics": {
+    "drafts": 247657.0,
+    "draft_tokens": 247657.0,
+    "accepted_tokens": 224946.0
+  },
+  "post_metrics": {
+    "drafts": 251025.0,
+    "draft_tokens": 251025.0,
+    "accepted_tokens": 228039.0
+  },
+  "results": [
+    {
+      "id": "gsm8k-23547",
+      "expected": 18,
+      "pred": 18,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 116,
+      "prompt_tokens": 77,
+      "elapsed_s": 13.551586389541626,
+      "gen_tail": "cks lay **16 eggs per day**.  \n- She eats **3 eggs** for breakfast.  \n- She uses **4 eggs** to bake muffins for her friends.  \n- Total eggs used: \\(3 + 4 = 7\\) eggs.  \n- Eggs left to sell: \\(16 - 7 = 9\\) eggs.  \n- She sells each egg for **$2**.  \n- Money made: \\(9 \\times 2 = 18\\) dollars.  \n\n#### 18"
+    },
+    {
+      "id": "gsm8k-48262",
+      "expected": 3,
+      "pred": 3,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 58,
+      "prompt_tokens": 39,
+      "elapsed_s": 5.8739471435546875,
+      "gen_tail": "The robe takes 2 bolts of blue fiber.  \nHalf that much white fiber means \\( \\frac{1}{2} \\times 2 = 1 \\) bolt of white fiber.  \nTotal bolts = \\( 2 + 1 = 3 \\).  \n\n#### 3"
+    },
+    {
+      "id": "gsm8k-46887",
+      "expected": 70000,
+      "pred": 70000,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 111,
+      "prompt_tokens": 62,
+      "elapsed_s": 12.468073606491089,
+      "gen_tail": "The cost of the house plus repairs is:  \n$80,000 + $50,000 = $130,000.\n\nThe value increased by 150%, so the new value is:  \n$80,000 \u00d7 150% = $80,000 \u00d7 1.5 = $120,000 increase.  \nNew value = $80,000 + $120,000 = $200,000.\n\nProfit = new value - total cost = $200,000 - $130,000 = $70,000.\n\n#### 70000"
+    },
+    {
+      "id": "gsm8k-74080",
+      "expected": 540,
+      "pred": 540,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 79,
+      "prompt_tokens": 47,
+      "elapsed_s": 9.13513994216919,
+      "gen_tail": "He runs 3 sprints each time he runs, and he does this 3 times a week.  \nSo, number of sprints per week = 3 sprints/session \u00d7 3 sessions/week = 9 sprints per week.  \nEach sprint is 60 meters, so total meters per week = 9 \u00d7 60 = 540 meters.  \n\n#### 540"
+    },
+    {
+      "id": "gsm8k-83100",
+      "expected": 20,
+      "pred": 20,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 99,
+      "prompt_tokens": 120,
+      "elapsed_s": 10.995267868041992,
+      "gen_tail": "We know each chicken gets 3 cups of feed per day.  \nWendi has 20 chickens, so total feed per day is:  \n\\( 20 \\times 3 = 60\\) cups.\n\nShe has already given:  \nMorning: 15 cups  \nAfternoon: 25 cups  \nTotal so far: \\(15 + 25 = 40\\) cups.\n\nFeed needed for the final meal:  \n\\(60 - 40 = 20\\) cups.\n\n#### 20"
+    },
+    {
+      "id": "gsm8k-53741",
+      "expected": 64,
+      "pred": 64,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 167,
+      "prompt_tokens": 67,
+      "elapsed_s": 18.383750915527344,
+      "gen_tail": " glass: $5  \n2nd glass: $3  \n3rd glass: $5  \n4th glass: $3  \n... and so on.\n\nSo for 16 glasses, there are 8 glasses at full price and 8 at the discounted price.\n\nFull price total: \\( 8 \\times 5 = 40 \\)  \nDiscounted total: \\( 8 \\times 3 = 24 \\)  \n\nTotal cost: \\( 40 + 24 = 64 \\)\n\n**Answer:**  \n#### 64"
+    },
+    {
+      "id": "gsm8k-18008",
+      "expected": 260,
+      "pred": 260,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 98,
+      "prompt_tokens": 54,
+      "elapsed_s": 10.846525430679321,
+      "gen_tail": "Let\u2019s break it down step by step.\n\n1. Seattle has 20 sheep.  \n2. Charleston has 4 times as many as Seattle:  \n   \\( 4 \\times 20 = 80 \\) sheep.  \n3. Toulouse has twice as many as Charleston:  \n   \\( 2 \\times 80 = 160 \\) sheep.  \n4. Total sheep:  \n   \\( 20 + 80 + 160 = 260 \\).\n\n#### 260"
+    },
+    {
+      "id": "gsm8k-29277",
+      "expected": 160,
+      "pred": 160,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 146,
+      "prompt_tokens": 78,
+      "elapsed_s": 15.995610237121582,
+      "gen_tail": " to download 80 GB at 2 GB/min:  \n80 \u00f7 2 = 40 minutes.  \n\nThen Windows forces a restart that takes 20 minutes.  \n\nAfter restart, she must download the entire 200 GB again:  \n200 \u00f7 2 = 100 minutes.  \n\nTotal time = 40 (initial download) + 20 (restart) + 100 (second download) = 160 minutes.  \n\n#### 160"
+    },
+    {
+      "id": "gsm8k-19503",
+      "expected": 45,
+      "pred": 45,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 218,
+      "prompt_tokens": 114,
+      "elapsed_s": 22.954663515090942,
+      "gen_tail": "5 = 1.5 \\) hours at 80 mph: distance covered = \\( 80 \\times 1.5 = 120 \\) miles toward home.\n\nTotal distance covered toward home = \\( 0 + 15 + 120 = 135 \\) miles.\n\nHe started 180 miles from home, so after covering 135 miles toward home, he is:  \n\\( 180 - 135 = 45 \\) miles from home.\n\n\\[\n\\boxed{45}\n\\]"
+    },
+    {
+      "id": "gsm8k-36002",
+      "expected": 460,
+      "pred": 460,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 160,
+      "prompt_tokens": 69,
+      "elapsed_s": 15.713353157043457,
+      "gen_tail": "ours**:  \n   Total hours = 45  \n   Overtime hours = \\( 45 - 40 = 5 \\) hours.\n\n3. **Overtime rate**:  \n   1.2 times regular rate = \\( 1.2 \\times 10 = 12 \\) dollars per hour.\n\n4. **Overtime pay**:  \n   \\( 5 \\times 12 = 60 \\) dollars.\n\n5. **Total earnings**:  \n   \\( 400 + 60 = 460 \\) dollars.\n\n#### 460"
+    },
+    {
+      "id": "gsm8k-88407",
+      "expected": 366,
+      "pred": 366,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 110,
+      "prompt_tokens": 71,
+      "elapsed_s": 11.197256326675415,
+      "gen_tail": "imes as many:  \n\\( 60 \\times 3 = 180 \\) downloads.  \n\nThe third month had a 30% reduction from the second month:  \nA 30% reduction means the number is 70% of the second month.  \n\\( 180 \\times 0.7 = 126 \\) downloads.  \n\nNow, total downloads over three months:  \n\\( 60 + 180 + 126 = 366 \\).  \n\n#### 366"
+    },
+    {
+      "id": "gsm8k-79188",
+      "expected": 694,
+      "pred": 694,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 123,
+      "prompt_tokens": 75,
+      "elapsed_s": 12.124037981033325,
+      "gen_tail": "ozen \u00d7 $68 per dozen = \\( 3 \\times 68 = 204 \\) dollars.\n\n2. **Mini cupcakes:**  \n2 dozen \u00d7 $80 per dozen = \\( 2 \\times 80 = 160 \\) dollars.\n\n3. **Mini cheesecakes:**  \n6 dozen \u00d7 $55 per dozen = \\( 6 \\times 55 = 330 \\) dollars.\n\nNow add them all:  \n\\( 204 + 160 + 330 = 694 \\).\n\nTotal cost:  \n#### 694"
+    },
+    {
+      "id": "gsm8k-89599",
+      "expected": 13,
+      "pred": 13,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 263,
+      "prompt_tokens": 80,
+      "elapsed_s": 26.40063500404358,
+      "gen_tail": "y?\"  \nThat means after 12 years, he has broken even, so the first year he actually earns money is year 13.\n\nBut careful: \"before he starts earning money\" means the time until profit becomes positive. After 12 years, profit = 0. After 13 years, profit > 0. So it takes 13 years.\n\n**Answer**:  \n#### 13"
+    },
+    {
+      "id": "gsm8k-81444",
+      "expected": 18,
+      "pred": 18,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 296,
+      "prompt_tokens": 71,
+      "elapsed_s": 27.02111792564392,
+      "gen_tail": "( \\frac{1}{2} \\left( \\frac{2x}{3} - 2 \\right) \\)\n\nWe are told she has 5 left:  \n\\[\n\\frac{1}{2} \\left( \\frac{2x}{3} - 2 \\right) = 5\n\\]\n\nMultiply both sides by 2:  \n\\[\n\\frac{2x}{3} - 2 = 10\n\\]\n\nAdd 2:  \n\\[\n\\frac{2x}{3} = 12\n\\]\n\nMultiply by \\( \\frac{3}{2} \\):  \n\\[\nx = 18\n\\]\n\n**Final answer:**  \n#### 18"
+    },
+    {
+      "id": "gsm8k-59306",
+      "expected": 60,
+      "pred": 60,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 187,
+      "prompt_tokens": 62,
+      "elapsed_s": 17.618047952651978,
+      "gen_tail": "emaining enrolled in jazz:  \n   \\( 25\\% \\text{ of } 16 = 0.25 \\times 16 = 4 \\) students.  \n5. Remaining after jazz = \\( 16 - 4 = 12 \\) students.  \n6. These 12 students are enrolled in hip-hop.  \n7. Percentage of total in hip-hop:  \n   \\( \\frac{12}{20} \\times 100\\% = 60\\% \\).\n\nFinal answer:  \n#### 60"
+    },
+    {
+      "id": "gsm8k-12782",
+      "expected": 125,
+      "pred": 125,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 113,
+      "prompt_tokens": 103,
+      "elapsed_s": 10.737870931625366,
+      "gen_tail": "ch option.\n\n**Jewelry:**  \nCost = $5,000  \nIncrease = 2.5%  \nProfit = \\( 5,000 \\times 0.025 = 125 \\) dollars.\n\n**Electronic gadgets:**  \nCost = $8,000  \nIncrease = 1.2%  \nProfit = \\( 8,000 \\times 0.012 = 96 \\) dollars.\n\nSince $125 > 96$, the better choice is jewelry, with a profit of $125.\n\n#### 125"
+    },
+    {
+      "id": "gsm8k-42325",
+      "expected": 230,
+      "pred": 230,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 54,
+      "prompt_tokens": 62,
+      "elapsed_s": 5.776580095291138,
+      "gen_tail": "The problem states that both trains travel the same distances:  \n- First day: 80 miles west  \n- Second day: 150 miles north  \n\nSo each train covers:  \n80 + 150 = 230 miles.\n\nThe final answer is:\n\n#### 230"
+    },
+    {
+      "id": "gsm8k-39093",
+      "expected": 57500,
+      "pred": 57500,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 108,
+      "prompt_tokens": 66,
+      "elapsed_s": 11.546989679336548,
+      "gen_tail": "s per week:  \n35 hours (teaching) + 15 hours (coaching) = 50 hours per week.\n\nNext, find the weekly pay:  \nTeaching: 35 hours \u00d7 $20 = $700  \nCoaching: 15 hours \u00d7 $30 = $450  \nTotal weekly pay = $700 + $450 = $1,150.\n\nNow, multiply by the number of weeks per year:  \n$1,150 \u00d7 50 = $57,500.\n\n#### 57500"
+    },
+    {
+      "id": "gsm8k-48733",
+      "expected": 7,
+      "pred": 7,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 73,
+      "prompt_tokens": 41,
+      "elapsed_s": 7.314259052276611,
+      "gen_tail": "She uses 3 eggs per day.  \nIn 4 weeks, there are \\(4 \\times 7 = 28\\) days.  \nTotal eggs used: \\(3 \\times 28 = 84\\) eggs.  \nSince a dozen is 12 eggs, the number of dozens is \\(84 \\div 12 = 7\\).\n\n#### 7"
+    },
+    {
+      "id": "gsm8k-52950",
+      "expected": 6,
+      "pred": 6,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 221,
+      "prompt_tokens": 77,
+      "elapsed_s": 21.18903136253357,
+      "gen_tail": "tal time needed for average speed of 4 mph:  \n\\[\n\\text{Total time} = \\frac{12}{4} = 3 \\text{ hours}\n\\]  \nShe has already used 2 hours, so remaining time = 3 - 2 = 1 hour.  \n\nTo cover the remaining 6 miles in 1 hour, her speed must be:  \n\\[\n\\frac{6}{1} = 6 \\text{ miles per hour}\n\\]  \n\n\\[\n\\boxed{6}\n\\]"
+    },
+    {
+      "id": "gsm8k-53966",
+      "expected": 15,
+      "pred": 15,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 305,
+      "prompt_tokens": 73,
+      "elapsed_s": 28.15893006324768,
+      "gen_tail": "  \n\\[\n\\frac{2}{3} \\times 1 = \\frac{2}{3} \\text{ liters}\n\\]\n\nWater left after spilling:  \n\\[\n\\frac{47}{3} - \\frac{2}{3} = \\frac{45}{3} = 15 \\text{ liters}\n\\]\n\nThe remaining total volume is:  \n\\[\n25 - 1 = 24 \\text{ liters}\n\\]\n\nThus, the amount of water in the remaining 24 liters is:  \n\\[\n\\boxed{15}\n\\]"
+    },
+    {
+      "id": "gsm8k-56935",
+      "expected": 14,
+      "pred": 14,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 133,
+      "prompt_tokens": 57,
+      "elapsed_s": 13.052493810653687,
+      "gen_tail": "p 1: Find Raymond's current age.**  \nSince Samantha is 31 and Raymond is 6 years older:  \nRaymond's age = 31 + 6 = 37.\n\n**Step 2: Find when Raymond's son was born.**  \nRaymond had his son at age 23, so that was:  \n37 \u2212 23 = 14 years ago.\n\n**Step 3: Answer.**  \nThe son was born 14 years ago.\n\n#### 14"
+    },
+    {
+      "id": "gsm8k-1207",
+      "expected": 7,
+      "pred": 7,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 107,
+      "prompt_tokens": 68,
+      "elapsed_s": 11.072130918502808,
+      "gen_tail": "Let's break it down step by step:  \n\n- First 3 customers: each buys 1 DVD \u2192 \\( 3 \\times 1 = 3 \\) DVDs  \n- Next 2 customers: each buys 2 DVDs \u2192 \\( 2 \\times 2 = 4 \\) DVDs  \n- Last 3 customers: buy 0 DVDs \u2192 \\( 3 \\times 0 = 0 \\) DVDs  \n\nTotal DVDs sold:  \n\\( 3 + 4 + 0 = 7 \\)  \n\n#### 7"
+    },
+    {
+      "id": "gsm8k-67033",
+      "expected": 8,
+      "pred": 8,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 60,
+      "prompt_tokens": 49,
+      "elapsed_s": 6.5513832569122314,
+      "gen_tail": "The candle burns from 1:00 PM to 5:00 PM, which is a total of 4 hours.  \nIt melts 2 centimeters every hour, so in 4 hours it melts:  \n\\( 4 \\times 2 = 8 \\) centimeters.\n\n#### 8"
+    },
+    {
+      "id": "gsm8k-89688",
+      "expected": 26,
+      "pred": 26,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 93,
+      "prompt_tokens": 50,
+      "elapsed_s": 9.408358812332153,
+      "gen_tail": "The price Kyle paid, $19.50, is 75% of the original price because he got a 25% discount.  \nLet the original price be \\( P \\).  \nThen:  \n\\[\n0.75P = 19.50\n\\]  \n\\[\nP = \\frac{19.50}{0.75}\n\\]  \n\\[\nP = 26\n\\]  \n\nThe original price was $26.  \n\n#### 26"
+    },
+    {
+      "id": "gsm8k-41135",
+      "expected": 2,
+      "pred": 2,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 155,
+      "prompt_tokens": 76,
+      "elapsed_s": 14.969037294387817,
+      "gen_tail": " **Apples**:  \n4 apples \u00d7 $1.50 each = $6\n\n4. **Total so far** (without pizza):  \n12 + 15 + 6 = $33\n\n5. **Amount left for pizza**:  \nTotal paid = $50  \nRemaining = 50 \u2212 33 = $17\n\n6. **Pizza boxes**:  \nEach box = $8.50  \nNumber of boxes = 17 \u00f7 8.50 = 2\n\nSo, Marie ordered **2** boxes of pizza.\n\n#### 2"
+    },
+    {
+      "id": "gsm8k-81345",
+      "expected": 243,
+      "pred": 243,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 88,
+      "prompt_tokens": 77,
+      "elapsed_s": 8.992576360702515,
+      "gen_tail": "She bought 3 pairs of each item.\n\nCost of shorts:  \n3 \u00d7 $16.50 = $49.50\n\nCost of pants:  \n3 \u00d7 $22.50 = $67.50\n\nCost of shoes:  \n3 \u00d7 $42.00 = $126.00\n\nTotal cost:  \n$49.50 + $67.50 + $126.00 = $243.00\n\n#### 243"
+    },
+    {
+      "id": "gsm8k-3339",
+      "expected": 16,
+      "pred": 16,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 76,
+      "prompt_tokens": 69,
+      "elapsed_s": 7.7707602977752686,
+      "gen_tail": "She eats 1 serving per day, so in 60 days she eats 60 servings.  \nEach carton has 15 servings, so she needs \\( 60 \\div 15 = 4 \\) cartons.  \nEach carton costs $4.00, so total cost is \\( 4 \\times 4 = 16 \\) dollars.\n\n#### 16"
+    },
+    {
+      "id": "gsm8k-32357",
+      "expected": 25,
+      "pred": 25,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 77,
+      "prompt_tokens": 60,
+      "elapsed_s": 8.517634391784668,
+      "gen_tail": "Let\u2019s break it down:  \nThe total trip is 60 miles.  \n\n- First stop: after 20 miles.  \n- Second stop: 15 miles before the end, so at 60 \u2212 15 = 45 miles.  \n\nThe distance between the first and second stops is:  \n45 \u2212 20 = 25 miles.\n\n**#### 25**"
+    },
+    {
+      "id": "gsm8k-42833",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 116,
+      "prompt_tokens": 81,
+      "elapsed_s": 10.74875283241272,
+      "gen_tail": "other pair costs twice as much:  \n   \\( 2 \\times 33 = 66 \\) dollars.  \n3. The total cost of both pairs of heels:  \n   \\( 33 + 66 = 99 \\) dollars.  \n4. The boots cost five dollars more than the two pairs of heels combined:  \n   \\( 99 + 5 = 104 \\) dollars.\n\nSo the boots cost **104** dollars.\n\n#### 104"
+    },
+    {
+      "id": "gsm8k-97335",
+      "expected": 109,
+      "pred": 109,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 141,
+      "prompt_tokens": 48,
+      "elapsed_s": 12.911292314529419,
+      "gen_tail": " : 11 \\).  \nLet their ages be:  \nDarrell = \\( 7x \\)  \nAllen = \\( 11x \\)  \n\nTheir total age now is 162:  \n\\[\n7x + 11x = 162\n\\]  \n\\[\n18x = 162\n\\]  \n\\[\nx = 9\n\\]  \n\nSo Allen's current age is:  \n\\[\n11 \\times 9 = 99\n\\]  \n\nAllen's age 10 years from now:  \n\\[\n99 + 10 = 109\n\\]  \n\n**Final answer:**  \n#### 109"
+    },
+    {
+      "id": "gsm8k-64410",
+      "expected": 80,
+      "pred": 80,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 127,
+      "prompt_tokens": 73,
+      "elapsed_s": 12.49810528755188,
+      "gen_tail": "econd guess: \\( 20 \\) more than half the first one.  \n  Half of 80 is 40, plus 20 gives \\( 60 \\).\n- Third guess: \\( 25\\% \\) more than the first one.  \n  25% of 80 is 20, so \\( 80 + 20 = 100 \\).\n\nNow, find the average:\n\n\\[\n\\frac{80 + 60 + 100}{3} = \\frac{240}{3} = 80\n\\]\n\nThe final answer is:\n\n#### 80"
+    },
+    {
+      "id": "gsm8k-54942",
+      "expected": 35,
+      "pred": 35,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 65,
+      "prompt_tokens": 53,
+      "elapsed_s": 6.455586194992065,
+      "gen_tail": "He takes care of 10 dogs.  \nEach dog takes 0.5 hours per day.  \nSo per day: \\( 10 \\times 0.5 = 5 \\) hours.  \nPer week (7 days): \\( 5 \\times 7 = 35 \\) hours.  \n\n#### 35"
+    },
+    {
+      "id": "gsm8k-9062",
+      "expected": 70,
+      "pred": 70,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 106,
+      "prompt_tokens": 41,
+      "elapsed_s": 10.353226661682129,
+      "gen_tail": "Let\u2019s define:  \n- Let \\( s \\) = number of silver coins  \n- Then gold coins = \\( s + 30 \\)  \n\nTotal coins:  \n\\[\ns + (s + 30) = 110\n\\]  \n\\[\n2s + 30 = 110\n\\]  \n\\[\n2s = 80\n\\]  \n\\[\ns = 40\n\\]  \n\nSo gold coins:  \n\\[\n40 + 30 = 70\n\\]  \n\n**Answer:**  \n#### 70"
+    },
+    {
+      "id": "gsm8k-61261",
+      "expected": 23,
+      "pred": 23,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 109,
+      "prompt_tokens": 53,
+      "elapsed_s": 10.188051700592041,
+      "gen_tail": ".\n\n1. Raymond has 40 jewels.\n2. Aaron has 5 more jewels than half of Raymond's jewels.  \n   Half of Raymond's jewels = \\( 40 \\div 2 = 20 \\)  \n   So Aaron has \\( 20 + 5 = 25 \\) jewels.\n3. Siobhan has 2 fewer jewels than Aaron.  \n   So Siobhan has \\( 25 - 2 = 23 \\) jewels.\n\n**Final answer:**  \n#### 23"
+    },
+    {
+      "id": "gsm8k-71983",
+      "expected": 9,
+      "pred": 9,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 77,
+      "prompt_tokens": 62,
+      "elapsed_s": 8.902760028839111,
+      "gen_tail": "First, find the points scored in the first 20 minutes:  \n4 points.\n\nNext, find the points scored in the second 20 minutes.  \n25% more than 4 is:  \n4 + (0.25 \u00d7 4) = 4 + 1 = 5 points.\n\nTotal points:  \n4 + 5 = 9.\n\n#### 9"
+    },
+    {
+      "id": "gsm8k-51865",
+      "expected": 75,
+      "pred": 75,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 98,
+      "prompt_tokens": 55,
+      "elapsed_s": 10.564174890518188,
+      "gen_tail": "We know Terry eats 2 yogurts per day.  \nOver 30 days, he eats:  \n\\( 2 \\times 30 = 60 \\) yogurts.\n\nThe sale is 4 yogurts for $5.00.  \nNumber of packs of 4 needed:  \n\\( 60 \\div 4 = 15 \\) packs.\n\nCost for 15 packs:  \n\\( 15 \\times 5 = 75 \\) dollars.\n\n#### 75"
+    },
+    {
+      "id": "gsm8k-35197",
+      "expected": 2,
+      "pred": 2,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 220,
+      "prompt_tokens": 73,
+      "elapsed_s": 21.04206418991089,
+      "gen_tail": " is the money he had after selling some lego sets, not all of them.  \nWe know he sold some lego sets to get $165.  \nLet \\( x \\) be the number of lego sets he sold.  \n\\[\n15x = 165\n\\]  \n\\[\nx = 11\n\\]  \nHe sold 11 lego sets.  \nHe originally had 13, so he still has:  \n\\[\n13 - 11 = 2\n\\]  \n\n\\[\n\\boxed{2}\n\\]"
+    },
+    {
+      "id": "gsm8k-70221",
+      "expected": 10,
+      "pred": 10,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 146,
+      "prompt_tokens": 56,
+      "elapsed_s": 15.007700681686401,
+      "gen_tail": "ay 2: runs half as much as day 1 in terms of time \u2192 \\( 3 \\times \\frac{1}{2} = 1.5 \\) hours.  \n- Day 3: also runs half as much as day 1 \u2192 \\( 1.5 \\) hours.  \n\nTotal time = \\( 3 + 1.5 + 1.5 = 6 \\) hours.  \n\nSpeed = total distance / total time = \\( 60 / 6 = 10 \\) miles per hour.  \n\n**Answer:**  \n#### 10"
+    },
+    {
+      "id": "gsm8k-92154",
+      "expected": 18,
+      "pred": 18,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 249,
+      "prompt_tokens": 86,
+      "elapsed_s": 22.733299255371094,
+      "gen_tail": "urs.  \n   Two-thirds walking: \\( \\frac{2}{3} \\times 6 = 4 \\) hours.\n\n4. **Distance**  \n   Running distance = \\( 6 \\text{ mph} \\times 2 \\text{ h} = 12 \\) miles.  \n   Walking distance = \\( 1.5 \\text{ mph} \\times 4 \\text{ h} = 6 \\) miles.  \n   Total distance = \\( 12 + 6 = 18 \\) miles.\n\n\\[\n\\boxed{18}\n\\]"
+    },
+    {
+      "id": "gsm8k-10764",
+      "expected": 8,
+      "pred": 8,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 115,
+      "prompt_tokens": 60,
+      "elapsed_s": 11.342403888702393,
+      "gen_tail": "y's iPhone is 1 year old.\n2. Ben's iPhone is two times older than Suzy's.  \n   \"Two times older\" means Ben's iPhone age = 2 \u00d7 Suzy's age = 2 \u00d7 1 = 2 years old.\n3. Brandon's iPhone is four times as old as Ben's.  \n   So Brandon's iPhone age = 4 \u00d7 Ben's age = 4 \u00d7 2 = 8 years old.\n\n**Answer:**  \n#### 8"
+    },
+    {
+      "id": "gsm8k-88796",
+      "expected": 200,
+      "pred": 200,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 95,
+      "prompt_tokens": 139,
+      "elapsed_s": 9.644112586975098,
+      "gen_tail": " normally throw the javelin 400 feet.  \nWith the sapphire gemstone, she can throw it three times farther:  \n\\( 400 \\times 3 = 1200 \\) feet.  \n\nThe dragon\u2019s flames reach 1000 feet.  \nTo find how far outside the dragon\u2019s reach she can stand and still hit it:  \n\\( 1200 - 1000 = 200 \\) feet.  \n\n#### 200"
+    },
+    {
+      "id": "gsm8k-54060",
+      "expected": 26,
+      "pred": 26,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 67,
+      "prompt_tokens": 94,
+      "elapsed_s": 6.959271430969238,
+      "gen_tail": "We start with 5 pies, each cut into 8 pieces:  \n\\[\n5 \\times 8 = 40 \\text{ pieces total}\n\\]  \nAt the end, 14 pieces remain.  \nThe number taken is:  \n\\[\n40 - 14 = 26\n\\]  \n\n**#### 26**"
+    },
+    {
+      "id": "gsm8k-37161",
+      "expected": 48,
+      "pred": 48,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 191,
+      "prompt_tokens": 66,
+      "elapsed_s": 16.148866653442383,
+      "gen_tail": "ly target is 2000 calories.  \nRemaining calories:  \n2000 - 1800 = 200 calories.  \n\nNow, find how many grams you can eat with 200 calories:  \n200 calories / (250 calories per serving / 60g per serving)  \n= 200 / (250/60)  \n= 200 * (60/250)  \n= (200 * 60) / 250  \n= 12000 / 250  \n= 48 grams.  \n\n#### 48"
+    },
+    {
+      "id": "gsm8k-18893",
+      "expected": 20,
+      "pred": 20,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 121,
+      "prompt_tokens": 85,
+      "elapsed_s": 10.739291191101074,
+      "gen_tail": " candles, he needs \\( 20 \\div 10 = 2\\) pounds of beeswax.  \nSupplies cost $10 per pound, so for 2 pounds it costs \\( 2 \\times 10 = 20\\) dollars.  \nHe sells 20 candles at $2.00 each, so revenue is \\( 20 \\times 2 = 40\\) dollars.  \nNet profit is revenue minus cost: \\( 40 - 20 = 20\\) dollars.  \n\n#### 20"
+    },
+    {
+      "id": "gsm8k-72956",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 139,
+      "prompt_tokens": 105,
+      "elapsed_s": 11.879109859466553,
+      "gen_tail": "n Tuesday = \\( 5 + \\frac{2}{5} \\times 5 = 5 + 2 = 7 \\).  \n\nOn Wednesday, she wrote twice the number of articles as Tuesday:  \nArticles on Wednesday = \\( 2 \\times 7 = 14 \\).  \n\nTotal articles = \\( 5 + 7 + 14 = 26 \\).  \n\nEach article takes 4 hours, so total hours = \\( 26 \\times 4 = 104 \\).  \n\n#### 104"
+    },
+    {
+      "id": "gsm8k-23598",
+      "expected": 163,
+      "pred": 163,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 99,
+      "prompt_tokens": 103,
+      "elapsed_s": 8.510759353637695,
+      "gen_tail": "Candice started with 80 notes.  \nShe bought a package with \\( x \\) notes.  \nTotal notes = \\( 80 + x \\).  \nShe used 220 notes on cups.  \nShe had 23 notes left.  \n\nSo:  \n\\[\n80 + x - 220 = 23\n\\]  \n\\[\nx - 140 = 23\n\\]  \n\\[\nx = 163\n\\]  \n\nThe package had 163 notes.  \n\n#### 163"
+    },
+    {
+      "id": "gsm8k-36679",
+      "expected": 800,
+      "pred": 800,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 162,
+      "prompt_tokens": 59,
+      "elapsed_s": 9.252715587615967,
+      "gen_tail": "ties:  \n$200 \\div 40 = 5$ blue ties.\n\nSince he buys twice as many red ties:  \n$5 \\times 2 = 10$ red ties.\n\nCost of a blue tie is $40.  \nRed ties cost 50% more:  \n$40 \\times 1.5 = 60$ dollars each.\n\nCost of red ties:  \n$10 \\times 60 = 600$ dollars.\n\nTotal spent:  \n$200 + 600 = 800$ dollars.\n\n#### 800"
+    },
+    {
+      "id": "gsm8k-65025",
+      "expected": 8,
+      "pred": 8,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 71,
+      "prompt_tokens": 50,
+      "elapsed_s": 6.151315212249756,
+      "gen_tail": "We start with 4 feet of wire.  \nSince 1 foot = 12 inches,  \n4 feet = \\( 4 \\times 12 = 48 \\) inches.  \n\nEach piece is 6 inches long, so the number of pieces is:  \n\\[\n\\frac{48}{6} = 8\n\\]  \n\n#### 8"
+    },
+    {
+      "id": "gsm8k-58027",
+      "expected": 30,
+      "pred": 30,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 89,
+      "prompt_tokens": 55,
+      "elapsed_s": 4.6900646686553955,
+      "gen_tail": "First, find the total number of units in the building:  \n15 floors \u00d7 8 units per floor = 120 units.\n\nNext, find the number of occupied units:  \n3/4 of 120 = (3 \u00d7 120) / 4 = 360 / 4 = 90 occupied units.\n\nThen, subtract to find unoccupied units:  \n120 \u2212 90 = 30 unoccupied units.\n\n#### 30"
+    }
+  ]
+}

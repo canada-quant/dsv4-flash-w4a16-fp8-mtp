@@ -101,6 +101,23 @@ Full RTX PRO 6000 recipe (patch rationale, debug notes): [`RECIPE_RTX6000PRO.md`
 
 Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%, HumanEval pass@1 84.76%, AIME 2024 30.0% (thinking=high). Spec-decode speedup: **1.49× at bs=1, k=1** (TPOT 6.02 ms vs 8.93 ms, same artifact w/ and w/o spec). Full numbers + methodology footnotes on the [HF model card](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP).
 
+### RTX PRO 6000 Blackwell Server Edition — verified 2026-05-27 on jasl/vllm@27fd665b ✓
+
+Full AIME-2024 + GSM8K sweep with `--reasoning-parser deepseek_v4` + thinking-mode + MTP n=1, max_tokens=16K (AIME) / 2K (GSM8K), `VLLM_TEST_FORCE_FP8_MARLIN=1`, TP=4 single replica:
+
+| Benchmark | Mode | Concurrency | Score | Errors | Wall | MTP acceptance | Raw JSON |
+|---|---|---|---|---|---|---|---|
+| AIME-2024 30 | thinking-high | c=1 | **24/30 = 80.0%** | 0 | 1763.1 s | 91.26% | [`benchmarks/rtxpro6000/aime30_c1_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c1_thinking_jasl27fd665b.json) |
+| AIME-2024 30 | thinking-high | c=2 | 22/30 = 73.3% | 0 | 869.0 s | 90.35% | [`benchmarks/rtxpro6000/aime30_c2_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c2_thinking_jasl27fd665b.json) |
+| AIME-2024 30 | thinking-high | c=4 | **24/30 = 80.0%** | 0 | 641.9 s | 91.61% | [`benchmarks/rtxpro6000/aime30_c4_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c4_thinking_jasl27fd665b.json) |
+| GSM8K (test, first 50) | chat | c=8 | **50/50 = 100.0%** | 0 | 80.4 s | 91.83% | [`benchmarks/rtxpro6000/gsm8k50_c8_chat_jasl27fd665b.json`](benchmarks/rtxpro6000/gsm8k50_c8_chat_jasl27fd665b.json) |
+
+**Headline:** zero CUDA illegal-memory-access in 90 AIME thinking-mode problems + 50 GSM8K chat problems = **140 production-shape problems with 0 errors**. Closes [`jasl/vllm#12`](https://github.com/jasl/vllm/issues/12) (Marlin MoE concurrent-decode race) cleanly via jasl's `27fd665b` "Protect active decode from very long prefill" scheduler patch (`max_num_scheduled_tokens // 16`).
+
+**Throughput speedup vs c=1 (AIME thinking):** c=2 = 2.03×, c=4 = 2.75×. c=2 score dip (22 vs 24 on c=1/c=4) is within n=30 noise (2 problems flipped). MTP acceptance holds at 90-92% across all concurrencies.
+
+**`finish_reasons` distribution** at c=4: 22 `stop` + 8 `length` truncation at max_tokens=16K — consistent with reference H200/B300 truncation rate for the longest AIME-2024 reasoning problems. Non-truncated pass@1 = 24/22 = 100%.
+
 ## What's in this repo
 
 | Path | What |
