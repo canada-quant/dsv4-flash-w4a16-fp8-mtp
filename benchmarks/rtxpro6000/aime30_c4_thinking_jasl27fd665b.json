@@ -1,0 +1,369 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-27T02:58:17.386557+00:00",
+    "dataset": "Maxwell-Jia/AIME_2024",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 4,
+    "max_tokens": 16000,
+    "thinking": true,
+    "n": 30
+  },
+  "totals": {
+    "correct": 24,
+    "errors": 0,
+    "wallclock_s": 641.9264936447144,
+    "finish_reasons": {
+      "stop": 22,
+      "length": 8
+    }
+  },
+  "mtp_delta": {
+    "d_drafts": 136425.0,
+    "d_draft_tokens": 136425.0,
+    "d_accepted_tokens": 124978.0,
+    "acceptance_rate": 0.9160930914421843,
+    "tokens_per_step": 1.9160930914421843
+  },
+  "pre_metrics": {
+    "drafts": 0.0,
+    "draft_tokens": 0.0,
+    "accepted_tokens": 0.0
+  },
+  "post_metrics": {
+    "drafts": 136425.0,
+    "draft_tokens": 136425.0,
+    "accepted_tokens": 124978.0
+  },
+  "results": [
+    {
+      "id": "2024-II-4",
+      "expected": 33,
+      "pred": 33,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2103,
+      "prompt_tokens": 165,
+      "elapsed_s": 25.356960773468018,
+      "gen_tail": "^3 z^2) = -25/8. The absolute value: | -25/8 | = 25/8. So m/n = 25/8, with m=25, n=8, relatively prime. Then m+n = 33.\n\nThus answer is 33.\n\nBut we should double-check if any sign issues: The problem asks for |log_2(x^4 y^3 z^2)|, which is positive. So 25/8. So m+n=33.\n\nThus final answer: \\boxed{33}."
+    },
+    {
+      "id": "2024-II-12",
+      "expected": 23,
+      "pred": 23,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7566,
+      "prompt_tokens": 186,
+      "elapsed_s": 75.71272087097168,
+      "gen_tail": " distinct from A and B, that does not belong to any segment from F other than AB.\" That means C is the only point on AB that is not on any other segment. So we found C = (1/8, 3\u221a3/8). Then OC^2 = (1/8)^2 + (3\u221a3/8)^2 = 1/64 + 27/64 = 28/64 = 7/16. So p=7, q=16, sum=23.\n\nThus final answer: \\boxed{23}."
+    },
+    {
+      "id": "2024-I-4",
+      "expected": 116,
+      "pred": 116,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1186,
+      "prompt_tokens": 144,
+      "elapsed_s": 15.932902812957764,
+      "gen_tail": "mly chosen numbers\" might be ambiguous: \"at least two of her numbers were 2 of the randomly chosen numbers\" could be interpreted as \"at least two of her numbers are among the randomly chosen numbers\". Yes. So correct.\n\nThus answer: 116.\n\nWe need to output final answer in \\boxed{...}. So \\boxed{116}."
+    },
+    {
+      "id": "2024-I-3",
+      "expected": 809,
+      "pred": 809,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3646,
+      "prompt_tokens": 122,
+      "elapsed_s": 40.04300880432129,
+      "gen_tail": "e regardless of Alice's play.\" So we count n such that Bob (second player) has a winning strategy. That is exactly the losing positions for Alice. So answer 809.\n\nWe should also consider if n=0? Not positive. So final answer: 809.\n\nNow we need to output the answer inside \\boxed{...}. So \\boxed{809}."
+    },
+    {
+      "id": "2024-I-8",
+      "expected": 197,
+      "pred": 3,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 114,
+      "elapsed_s": 147.98136973381042,
+      "gen_tail": " incircle radius. For a given angle, you can have a chain of circles that are all tangent to the incircle and to the sides, and also tangent to each other. The number of such circles might be fixed by the angle. For example, in a 60\u00b0 angle, you might be able to fit 3 circles? Not sure.\n\nLet's try to"
+    },
+    {
+      "id": "2024-I-12",
+      "expected": 385,
+      "pred": 0,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 102,
+      "elapsed_s": 144.6424469947815,
+      "gen_tail": "om [0.5,0.75], f1 is symmetric, so at x=0.5, it's a peak. So yes, x=0.5 is a peak. Similarly, x=0 and x=1 are peaks. So there are peaks at x=0, 0.08333, 0.25, 0.41667, 0.5, 0.58333, 0.75, 0.91667, 1. That's 9 peaks. But wait, we also have peaks at x=0.08333 and 0.41667? Actually from [0,0.25] we had"
+    },
+    {
+      "id": "2024-I-11",
+      "expected": 371,
+      "pred": 2,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 99,
+      "elapsed_s": 146.61819982528687,
+      "gen_tail": "{0,3,4,7}, B3={1,2,5,6}, B4={2,3,6,7}. Note that these are all the 4-element subsets that are unions of two opposite pairs? Actually they are of the form: take a 2-element set of vertices that are 1 apart? Let's see pattern: {0,1,4,5} = {0,1} \u222a {4,5}; {0,3,4,7} = {0,3} \u222a {4,7}; {1,2,5,6} = {1,2} \u222a {"
+    },
+    {
+      "id": "2024-II-11",
+      "expected": 601,
+      "pred": 601,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4983,
+      "prompt_tokens": 91,
+      "elapsed_s": 43.971593379974365,
+      "gen_tail": "Number of solutions with a=100: b+c=200, b,c>=0 => 201 solutions. Similarly for b=100 and c=100, but we overcount those with two 100's and three 100's. So total = 3*201 - 3*1 + 1 = 603 - 3 + 1 = 601. Yes.\n\nThus answer is 601.\n\nNow we need to output the integer answer inside \\boxed{}. So \\boxed{601}."
+    },
+    {
+      "id": "2024-I-2",
+      "expected": 25,
+      "pred": 25,
+      "correct": true,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 69,
+      "elapsed_s": 143.45257139205933,
+      "gen_tail": " ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x= ? x="
+    },
+    {
+      "id": "2024-II-6",
+      "expected": 55,
+      "pred": 55,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2943,
+      "prompt_tokens": 85,
+      "elapsed_s": 29.339503288269043,
+      "gen_tail": "e integers, and the maximum belongs to A. So for each m in A, we consider all subsets of {1,2,...,m} that contain m. That's 2^{m-1} sets. So total = \u03a3_{m\u2208A} 2^{m-1}. So indeed.\n\nThus answer is 55.\n\nBut the problem asks: \"Find the sum of the elements of A.\" So answer 55.\n\nWe should output \\boxed{55}."
+    },
+    {
+      "id": "2024-I-7",
+      "expected": 540,
+      "pred": 540,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2181,
+      "prompt_tokens": 67,
+      "elapsed_s": 20.773970365524292,
+      "gen_tail": "e \\boxed{...}\". So answer is 540.\n\nBut wait: The numbers 75,117,96,144 are multiples of 3? 75=3*25, 117=3*39, 96=3*32, 144=3*48. So maybe there is simplification. But we already got 540.\n\nDouble-check: 324 cos\u03b8 - 432 sin\u03b8 = 108(3 cos\u03b8 - 4 sin\u03b8). 108*5=540. So indeed.\n\nThus final answer: \\boxed{540}."
+    },
+    {
+      "id": "2024-II-3",
+      "expected": 45,
+      "pred": 45,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3978,
+      "prompt_tokens": 144,
+      "elapsed_s": 39.63118267059326,
+      "gen_tail": "gits can be any from 0-9, but leading zeros are allowed? In the example, top row has leading zeros, so that's fine. So all triples with sum 8 are valid.\n\nThus answer is 45.\n\nBut let's verify with a quick enumeration: a from 0 to 8, b from 0 to 8-a, c=8-a-b. That's 45.\n\nThus final answer: \\boxed{45}."
+    },
+    {
+      "id": "2024-I-1",
+      "expected": 204,
+      "pred": 204,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1046,
+      "prompt_tokens": 158,
+      "elapsed_s": 11.279733657836914,
+      "gen_tail": "h. Then the walk distance is 9 km, so walking time = distance/speed = 9/3 = 3 hours = 180 minutes. Including t minutes at coffee shop, total time = 180 + t = 180 + 24 = 204 minutes. So the answer is 204 minutes.\n\nBut we need to output the integer answer inside \\boxed{}. So final answer: \\boxed{204}."
+    },
+    {
+      "id": "2024-II-7",
+      "expected": 699,
+      "pred": 699,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4778,
+      "prompt_tokens": 93,
+      "elapsed_s": 45.12451148033142,
+      "gen_tail": "test four-digit positive integer with the property that whenever one of its digits is changed to 1, the resulting number is divisible by 7. Let Q and R be the quotient and remainder, respectively, when N is divided by 1000. Find Q+R.\" So answer is 699.\n\nWe should present final answer as \\boxed{699}."
+    },
+    {
+      "id": "2024-I-6",
+      "expected": 294,
+      "pred": 294,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2478,
+      "prompt_tokens": 78,
+      "elapsed_s": 22.788896560668945,
+      "gen_tail": ")*C(7,1)=21*7=147. Similarly for first run U, 3 U runs and 2 R runs, same count. So total 294.\n\nThus answer is 294.\n\nBut wait: Could there be any paths that change direction exactly four times but have some steps that are not just right and up? No, only right and up.\n\nThus final answer: \\boxed{294}."
+    },
+    {
+      "id": "2024-I-13",
+      "expected": 110,
+      "pred": 110,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7205,
+      "prompt_tokens": 88,
+      "elapsed_s": 65.10290503501892,
+      "gen_tail": ",000 - 289*222=2,890,000 - 64,158 = 2,825,842, remainder -80? Actually 2,825,762 - 2,825,842 = -80, so remainder 209? Not divisible. So no.\n\nThus 110 is the smallest positive solution. So answer is 110.\n\nBut we should also consider m=38? Already no. So answer is 110.\n\nThus final answer: \\boxed{110}."
+    },
+    {
+      "id": "2024-I-15",
+      "expected": 721,
+      "pred": 721,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 14787,
+      "prompt_tokens": 113,
+      "elapsed_s": 132.9929702281952,
+      "gen_tail": "ly. So our interpretation is correct.\n\nThus final answer: 721.\n\nNow we need to output the integer p+q = 721.\n\nBut let's double-check the arithmetic: 657/64 simplifies? 657 and 64 are coprime (657 = 3*219 = 3*3*73 = 9*73, 64=2^6, no common factors). So p=657, q=64, sum=721.\n\nThus answer: \\boxed{721}."
+    },
+    {
+      "id": "2024-II-15",
+      "expected": 315,
+      "pred": 6,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 78,
+      "elapsed_s": 144.9684500694275,
+      "gen_tail": " we need to count the number of pairs of chords from each family that are mutually intersecting. This is a combinatorial problem that might have a closed form.\n\nWe can approach by considering the geometry: The chords in a given family are all parallel. In a regular polygon, these chords are arranged"
+    },
+    {
+      "id": "2024-II-10",
+      "expected": 468,
+      "pred": 468,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4483,
+      "prompt_tokens": 71,
+      "elapsed_s": 40.933374643325806,
+      "gen_tail": " = 1296*30=38880? Actually \u0394=36\u221a30\u2248197.18, squared=38880, product should be 38880. Let's compute approximate: 32.862*10.954=360.0, 7.490*14.418=108.0, product 360*108=38880, yes. So consistent.\n\nThus answer is 468.\n\nNow we need to output final integer answer inside \\boxed{}.\n\nSo answer: \\boxed{468}."
+    },
+    {
+      "id": "2024-II-9",
+      "expected": 902,
+      "pred": 902,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 11214,
+      "prompt_tokens": 118,
+      "elapsed_s": 102.96488761901855,
+      "gen_tail": "revious two conditions.\"\n\nWe have interpreted \"any additional chip placed on the grid\" as meaning if we try to add any chip (of either colour) to any empty cell, it would violate the conditions. That is the usual interpretation of maximality. So our reasoning stands.\n\nThus final answer: \\boxed{902}."
+    },
+    {
+      "id": "2024-II-14",
+      "expected": 211,
+      "pred": 18,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 137,
+      "elapsed_s": 142.0582959651947,
+      "gen_tail": "c=4: D=361-4*18*4=361-288=73, not square. c=5: D=361-4*18*5=361-360=1, d=1. a = (19-10\u00b11)/2 = (9\u00b11)/2 => a=5 or 4. So (5,5) and (4,5). So we have (17,1), (5,5), (4,5). That's 3 solutions. So count=3.\n\nb=20: b=20, b-1=19. c from 1 to floor(400/76)=5 (400/76\u22485.263). c=1: D=400-4*19*1=400-76=324, d=18."
+    },
+    {
+      "id": "2024-II-5",
+      "expected": 80,
+      "pred": 80,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 11172,
+      "prompt_tokens": 82,
+      "elapsed_s": 102.55336380004883,
+      "gen_tail": "the hexagon is convex and equilateral, and the triangle sides are extensions of AB, CD, EF. Our derivation assumed that the triangle is the outer triangle, and the hexagon is inside. That matches the description: extensions of AB, CD, EF form the triangle. So it's consistent.\n\nThus final answer: 80."
+    },
+    {
+      "id": "2024-I-9",
+      "expected": 480,
+      "pred": 480,
+      "correct": true,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 103,
+      "elapsed_s": 146.12871384620667,
+      "gen_tail": "ssible |u| and |v| are the same because if (u,v) is a pair, then both |u| and |v| are in the set. So the infimum of |u|^2 is the same as infimum of |v|^2. So it's consistent.\n\nThus, answer is 480.\n\nBut wait, the problem asks: \"Find the greatest real number that is less than $BD^2$ for all such rhomb"
+    },
+    {
+      "id": "2024-II-2",
+      "expected": 236,
+      "pred": 6,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 96,
+      "elapsed_s": 141.36369276046753,
+      "gen_tail": "} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6"
+    },
+    {
+      "id": "2024-II-1",
+      "expected": 73,
+      "pred": 73,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2488,
+      "prompt_tokens": 124,
+      "elapsed_s": 24.184621810913086,
+      "gen_tail": "= 229 - 73 = 156. So 156 own only H. Then total = 156+437+234+73=900, good.\n\nWe can also verify if the individual equations are consistent? Possibly we can find w1, w2, w3, x1, x2, x3 from the equations, but not necessary. The sum gave us x directly.\n\nThus answer is 73.\n\nSo final answer: \\boxed{73}."
+    },
+    {
+      "id": "2024-I-10",
+      "expected": 113,
+      "pred": 113,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 11882,
+      "prompt_tokens": 368,
+      "elapsed_s": 108.3989577293396,
+      "gen_tail": "edian. But for AP, we can use the fact that the symmedian point divides the symmedian in a certain ratio. Alternatively, we can use the fact that the power of D gives DP = DB^2/DA, and we computed DB and DA using law of cos with correct angles sleight. So our method is fine.\n\nThus final answer: 113."
+    },
+    {
+      "id": "2024-II-8",
+      "expected": 127,
+      "pred": 127,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 11340,
+      "prompt_tokens": 183,
+      "elapsed_s": 103.53038668632507,
+      "gen_tail": "So indeed.\n\nThus answer 127.\n\nBut we should also consider if the torus could be placed such that the tangency circle is on the other side (e.g., the torus could be inverted? But the torus is symmetric, so the other side would give same radius magnitude. So it's fine.\n\nThus final answer: \\boxed{127}."
+    },
+    {
+      "id": "2024-I-14",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4622,
+      "prompt_tokens": 162,
+      "elapsed_s": 42.33808755874634,
+      "gen_tail": "3. Then m+n+p = 20+21+63 = 104.\n\nBut wait, is that the distance from I to each face? Yes, that's the inradius. So answer should be 104.\n\nBut we should double-check that the point I exists inside the tetrahedron. For a disphenoid, the incenter is inside. So it's fine.\n\nThus final answer: \\boxed{104}."
+    },
+    {
+      "id": "2024-I-5",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7568,
+      "prompt_tokens": 95,
+      "elapsed_s": 64.39302062988281,
+      "gen_tail": "2)^2 = 8400 + (8-h)^2. For h=-17, (8-(-17))=25, square 625, so (e+92)^2=9025, e+92=\u00b195. For e=3, e+92=95; for e=-187, e+92=-95. So both satisfy. So both are mathematically valid. But the order condition picks e=3.\n\nThus final answer: 104.\n\nNow we need to output the integer answer inside \\boxed{104}."
+    },
+    {
+      "id": "2024-II-13",
+      "expected": 321,
+      "pred": 321,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 9770,
+      "prompt_tokens": 80,
+      "elapsed_s": 71.42760419845581,
+      "gen_tail": "1. So product over all t (including t=0) of (t^2+1) = product over all r of Q(r). So we need to compute \u220f_{t: (t+1)^13=1} (t^2+1). That might be computed using the polynomial whose roots are t. But the resultant approach is simpler.\n\nThus answer 321.\n\nNow we need to output the answer in \\boxed{321}."
+    }
+  ]
+}
