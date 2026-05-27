@@ -1,0 +1,369 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-27T04:45:09.654390+00:00",
+    "dataset": "Maxwell-Jia/AIME_2024",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 1,
+    "max_tokens": 16000,
+    "thinking": true,
+    "n": 30
+  },
+  "totals": {
+    "correct": 24,
+    "errors": 0,
+    "wallclock_s": 1763.1049537658691,
+    "finish_reasons": {
+      "stop": 23,
+      "length": 7
+    }
+  },
+  "mtp_delta": {
+    "d_drafts": 131292.0,
+    "d_draft_tokens": 131292.0,
+    "d_accepted_tokens": 119813.0,
+    "acceptance_rate": 0.9125689303232489,
+    "tokens_per_step": 1.912568930323249
+  },
+  "pre_metrics": {
+    "drafts": 0.0,
+    "draft_tokens": 0.0,
+    "accepted_tokens": 0.0
+  },
+  "post_metrics": {
+    "drafts": 131292.0,
+    "draft_tokens": 131292.0,
+    "accepted_tokens": 119813.0
+  },
+  "results": [
+    {
+      "id": "2024-II-4",
+      "expected": 33,
+      "pred": 33,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2509,
+      "prompt_tokens": 165,
+      "elapsed_s": 20.6047523021698,
+      "gen_tail": ".\n\nThus the value is 25/8, which is m/n with m=25, n=8, relatively prime. Then m+n = 25+8 = 33.\n\nThus answer: 33.\n\nWe should double-check if any sign issues: x,y,z positive, logs defined, all good. So final answer is 33.\n\nNow we need to output the integer 33 inside \\boxed{}.\n\nThus final: \\boxed{33}."
+    },
+    {
+      "id": "2024-II-12",
+      "expected": 23,
+      "pred": 23,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 15129,
+      "prompt_tokens": 186,
+      "elapsed_s": 105.85912299156189,
+      "gen_tail": "uadrant. That means the entire segment must have x\u22650, y\u22650. For a line from (p,0) to (0,q), the segment is the part between the axes, so it's fine. So all such segments are included. So our parameterization is correct.\n\nThus answer: 23.\n\nWe should present the reasoning and final answer in \\boxed{23}."
+    },
+    {
+      "id": "2024-I-4",
+      "expected": 116,
+      "pred": 116,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2174,
+      "prompt_tokens": 144,
+      "elapsed_s": 16.37554168701172,
+      "gen_tail": "t it says \"at least two\", so it's inclusive. So it's fine.\n\nThus answer is 116.\n\nBut before finalizing, consider if there is any nuance: The phrase \"were 2 of the randomly chosen numbers\" might be a misprint for \"were among the randomly chosen numbers\". So it's fine.\n\nThus final answer: \\boxed{116}."
+    },
+    {
+      "id": "2024-I-3",
+      "expected": 809,
+      "pred": 809,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3243,
+      "prompt_tokens": 122,
+      "elapsed_s": 22.990796089172363,
+      "gen_tail": " that Bob will win the game regardless of Alice's play.\" So answer is 809.\n\nWe should also consider if there is any nuance: The game is impartial, and we assumed optimal play. Bob's winning strategy exists if and only if the starting position is a P-position. So yes.\n\nThus final answer: \\boxed{809}."
+    },
+    {
+      "id": "2024-I-8",
+      "expected": 197,
+      "pred": 2,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 114,
+      "elapsed_s": 112.98445725440979,
+      "gen_tail": " from the line, and the line is at distance r in the direction of the normal. So the signed distance from I to the line is r, and the line is at r in the normal direction. The interior is the side where I is, which is the side opposite to the normal direction? Because the normal points from I to the"
+    },
+    {
+      "id": "2024-I-12",
+      "expected": 385,
+      "pred": 3,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 102,
+      "elapsed_s": 110.98597526550293,
+      "gen_tail": "-1=0; at y=0.2222, cos=-0.5, B = -4(-0.5)-1 = 2-1=1. So increasing from 0 to 1. So B(y)= -4 cos -1.\n\nOn [0.2222, 0.2566]: c \u2208 [0.5, 0.75] (increasing from 0.5 to 0.75). For c in [1/2,3/4], h(c)=3/4-c, so B=3-4c=3-4(-cos)=3+4 cos. At y=0.2222, cos=-0.5, B=3+4(-0.5)=3-2=1; at y=0.2566, cos=-0.75, B=3+"
+    },
+    {
+      "id": "2024-I-11",
+      "expected": 371,
+      "pred": 16,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 99,
+      "elapsed_s": 113.78387069702148,
+      "gen_tail": "? Yes, it contains 0 and 4, but also 2 and 6. But does it contain exactly one from each antipodal pair? For pair {0,4}, it contains both 0 and 4, so it contains two from that pair, not one. So E is not in the r=4 family because r=4 requires exactly one from each antipodal pair. So E is not in the 16"
+    },
+    {
+      "id": "2024-II-11",
+      "expected": 601,
+      "pred": 601,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 5208,
+      "prompt_tokens": 91,
+      "elapsed_s": 36.79303455352783,
+      "gen_tail": ",c) satisfying a + b + c = 300 and a^2 b + a^2 c + b^2 a + b^2 c + c^2 a + c^2 b = 6,000,000.\" So answer 601.\n\nWe can also think of it as: The condition simplifies to (a-100)(b-100)(c-100)=0. So count solutions to a+b+c=300 with at least one equal to 100. That's 601.\n\nThus final answer: \\boxed{601}."
+    },
+    {
+      "id": "2024-I-2",
+      "expected": 25,
+      "pred": 25,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8553,
+      "prompt_tokens": 69,
+      "elapsed_s": 58.9735848903656,
+      "gen_tail": " solution? The reciprocal condition gave xy=25 as necessary. Could there be a solution where the two equations are not both giving the same ratio? But they are given as equal to 10, so they are both 10. So the product condition is necessary. So xy=25. So answer is 25.\n\nThus final answer: \\boxed{25}."
+    },
+    {
+      "id": "2024-II-6",
+      "expected": 55,
+      "pred": 55,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2026,
+      "prompt_tokens": 85,
+      "elapsed_s": 14.604493856430054,
+      "gen_tail": "^5:1, 2^4:0, 2^3:1, 2^2:0, 2^1:0, 2^0:0. So binary: 11111101000. That's 11 bits? Actually 2^10 is the 11th bit (since 2^0 is bit0). So binary representation is 11111101000. So positions of 1's: 10,9,8,7,6,5,3. So n = pos+1 = 11,10,9,8,7,6,4. Sum = 11+10+9+8+7+6+4 = 55. Yes.\n\nThus answer: \\boxed{55}."
+    },
+    {
+      "id": "2024-I-7",
+      "expected": 540,
+      "pred": 540,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2218,
+      "prompt_tokens": 67,
+      "elapsed_s": 15.699883699417114,
+      "gen_tail": "So indeed.\n\nThus answer is 540.\n\nBut the problem statement: \"Find the largest possible real part of ...\" and then \"where z is a complex number with |z|=4.\" So answer 540.\n\nWe should also check if there is any possibility that the expression could be real? Not needed.\n\nThus final answer: \\boxed{540}."
+    },
+    {
+      "id": "2024-II-3",
+      "expected": 45,
+      "pred": 45,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3462,
+      "prompt_tokens": 144,
+      "elapsed_s": 24.080599784851074,
+      "gen_tail": " = 100a1+10a2+a3, bottom = 100(9-a1)+10(9-a2)+(9-a3)=900-100a1+90-10a2+9-a3=999 - (100a1+10a2+a3). So sum=999. So indeed any triple with sum 8 works.\n\nThus number of ways = number of ordered triples (a1,a2,a3) of nonnegative integers \u22649 summing to 8 = C(8+3-1,3-1)=C(10,2)=45.\n\nSo answer: \\boxed{45}."
+    },
+    {
+      "id": "2024-I-1",
+      "expected": 204,
+      "pred": 204,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1505,
+      "prompt_tokens": 158,
+      "elapsed_s": 10.931757926940918,
+      "gen_tail": "kilometers per hour.\" s+1/2 = 2.5 + 0.5 = 3 km/h. Then walking time = 9/3 = 3 hours. Then total time including t minutes = 3 hours + 24 minutes = 3 hours 24 minutes = 3*60+24 = 180+24=204 minutes.\n\nThus answer: 204 minutes.\n\nBut we need to put final integer answer inside \\boxed{...}. So \\boxed{204}."
+    },
+    {
+      "id": "2024-II-7",
+      "expected": 699,
+      "pred": 699,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4050,
+      "prompt_tokens": 93,
+      "elapsed_s": 28.452192544937134,
+      "gen_tail": ". So Q+R = 5+694 = 699.\n\nThus answer is 699.\n\nBut we should double-check if there are any other possibilities for a? a=5 only from mod condition. But we also need to consider that b,c,d must be digits 0-9. b=6, d=4, c=2 or 9. So only two numbers. So greatest is 5694.\n\nThus final answer: \\boxed{699}."
+    },
+    {
+      "id": "2024-I-6",
+      "expected": 294,
+      "pred": 294,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1933,
+      "prompt_tokens": 78,
+      "elapsed_s": 14.086130619049072,
+      "gen_tail": "that's fine.\n\nThus answer: 294.\n\nBut let's double-check the combinatorial counts: For 3 R blocks summing to 8 with each >=1: number of compositions = C(8-1,3-1)=C(7,2)=21. For 2 U blocks summing to 8: C(7,1)=7. So 21*7=147. Similarly for the other case. So total 294.\n\nThus final answer: \\boxed{294}."
+    },
+    {
+      "id": "2024-I-13",
+      "expected": 110,
+      "pred": 110,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8017,
+      "prompt_tokens": 88,
+      "elapsed_s": 55.9953453540802,
+      "gen_tail": "d25=1. So residues cycle, never 0 mod25. So no.\n\np=13? n^4+1 mod169? But we already saw no solution mod13, so no solution mod169. So p=17 is indeed the smallest.\n\nThus answer: 110.\n\nBut we should also consider p=2? Already no. So final answer is 110.\n\nNow we need to output the answer in \\boxed{110}."
+    },
+    {
+      "id": "2024-I-15",
+      "expected": 721,
+      "pred": 721,
+      "correct": true,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 113,
+      "elapsed_s": 111.79856967926025,
+      "gen_tail": "orm polynomial division: 92a^3 - 729a^2 + 1242a - 529 divided by (a - 23/4). Since 23/4 = 5.75, but better to use rational numbers: a = 23/4. Multiply the divisor by 4 to avoid fractions: (4a - 23). But we can do synthetic division with a=23/4. Compute h(23/4)=0. So factor: (a - 23/4) * (92a^2 + ..."
+    },
+    {
+      "id": "2024-II-15",
+      "expected": 315,
+      "pred": 10,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 78,
+      "elapsed_s": 111.38187718391418,
+      "gen_tail": "irections and determine which pairs intersect.\n\nFirst, we need to identify the chords for direction 15\u00b0 (i+j \u22617 mod12). The chords are: (0,7), (1,6), (2,5), (3,4), (8,11), (9,10). Let's list them with their coordinates. We need to set up a coordinate system. It might be easier to use symmetry: For a"
+    },
+    {
+      "id": "2024-II-10",
+      "expected": 468,
+      "pred": 468,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3815,
+      "prompt_tokens": 71,
+      "elapsed_s": 26.66593050956726,
+      "gen_tail": "\u221a30/13) = 468 * \u221a30/13 = 468/13 * \u221a30 = 36 * \u221a30? Since 13*36=468, yes 36\u221a30. Then s = (a+b+c)/2 = (4\u221a30 + 8\u221a30)/2 = (12\u221a30)/2 = 6\u221a30. Then r = \u0394/s = (36\u221a30)/(6\u221a30)=6, correct. So consistent.\n\nThus answer is 468.\n\nNow the problem asks: \"Find AB\u00b7AC.\" So answer is 468.\n\nThus final answer: \\boxed{468}."
+    },
+    {
+      "id": "2024-II-9",
+      "expected": 902,
+      "pred": 902,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 12452,
+      "prompt_tokens": 118,
+      "elapsed_s": 88.23670101165771,
+      "gen_tail": " answer is 902.\n\nBut wait, there is also the possibility of having no chips? That would be a placement of some chips (zero chips). But then we can add a chip, so it violates maximality. So not allowed.\n\nThus, final answer: 902.\n\nNow, we need to output the integer inside \\boxed{}.\n\nThus, \\boxed{902}."
+    },
+    {
+      "id": "2024-II-14",
+      "expected": 211,
+      "pred": 211,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 15351,
+      "prompt_tokens": 137,
+      "elapsed_s": 107.15232229232788,
+      "gen_tail": "209, c=1, n=209*211+1=44099+1=44100, sqrt=210. All valid. So indeed 15 numbers.\n\nThus answer is 211.\n\nBut we should also consider if b=2? No. So final answer: 211.\n\nNow, the problem asks: \"Reason step-by-step then place your final integer answer (0-999) inside \\boxed{...}.\" So we output \\boxed{211}."
+    },
+    {
+      "id": "2024-II-5",
+      "expected": 80,
+      "pred": 1,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 82,
+      "elapsed_s": 111.3856098651886,
+      "gen_tail": " \u03b8+ sin \u03c6)\n\nNow, A_x = -s/2 (1+cos \u03b8+cos \u03c6)\nA_y = -s/2 (sin \u03b8+ sin \u03c6)\n\nSo:\nE_y - A_y = s/2 (sin \u03b8+ sin \u03c6) - ( -s/2 (sin \u03b8+ sin \u03c6) ) = s/2 (sin \u03b8+ sin \u03c6 + sin \u03b8+ sin \u03c6) = s (sin \u03b8+ sin \u03c6)\nThus, r = (E_y - A_y)/(s sin \u03b8) = (s (sin \u03b8+ sin \u03c6))/(s sin \u03b8) = (sin \u03b8+ sin \u03c6)/ sin \u03b8 = 1 + (sin \u03c6/ sin \u03b8).\n\nNow"
+    },
+    {
+      "id": "2024-I-9",
+      "expected": 480,
+      "pred": 480,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 10916,
+      "prompt_tokens": 103,
+      "elapsed_s": 75.9501085281372,
+      "gen_tail": "ersect hyperbola because plugging x=0 gives -y^2/24=1 => no real y. So no A. So such B not allowed. Similarly, if x2=0, then B on hyperbola: -y2^2/24=1 => no real. So no.\n\nThus the only possible B are those with y2^2 > 600/11.\n\nThus answer is 480.\n\nNow we need to present final answer in \\boxed{480}."
+    },
+    {
+      "id": "2024-II-2",
+      "expected": 236,
+      "pred": 1,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 96,
+      "elapsed_s": 109.55317282676697,
+      "gen_tail": ",2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1,2,3,6} and {1,2,4,5}. Also {1"
+    },
+    {
+      "id": "2024-II-1",
+      "expected": 73,
+      "pred": 73,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4595,
+      "prompt_tokens": 124,
+      "elapsed_s": 32.22536873817444,
+      "gen_tail": "ach of the 900 residents owns a bag of candy hearts. There are 437 residents who own exactly two of these things, and 234 residents who own exactly three of these things. Find the number of residents of Aimeville who own all four of these things.\" So the answer is 73.\n\nThus final answer: \\boxed{73}."
+    },
+    {
+      "id": "2024-I-10",
+      "expected": 113,
+      "pred": 113,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8793,
+      "prompt_tokens": 368,
+      "elapsed_s": 62.299625396728516,
+      "gen_tail": "confirm. Since we have line AD param eq, we can find intersection with circle. But not necessary.\n\nThus final answer: 113.\n\nBut wait, the problem statement: \"AP can be written as the form m/n, where m and n are relatively prime integers. Find m+n.\" So m=100, n=13, sum=113.\n\nThus answer: \\boxed{113}."
+    },
+    {
+      "id": "2024-II-8",
+      "expected": 127,
+      "pred": 127,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8435,
+      "prompt_tokens": 183,
+      "elapsed_s": 59.451817750930786,
+      "gen_tail": "/8). So x = 66/8 = 33/4 = 8.25. That is r_i. For external: distance = R_s + r = 14, so d^2 = 14^2 - 6^2 = 196-36=160 => d=\u221a160=4\u221a10. Then x = 6*11/14 = 66/14 = 33/7 \u2248 4.7142857. So r_o = 33/7. Then difference = 33/4 - 33/7 = 33*(7-4)/28 = 33*3/28 = 99/28. So m+n=99+28=127.\n\nThus answer: \\boxed{127}."
+    },
+    {
+      "id": "2024-I-14",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3867,
+      "prompt_tokens": 162,
+      "elapsed_s": 27.28829336166382,
+      "gen_tail": "800) = sqrt(2048*100) = 10*sqrt(2048) = 10*\u221a(1024*2)=10*32\u221a2=320\u221a2. Then V = (320\u221a2)/(6\u221a2) = 320/6 = 160/3. Yes, because the formula gives V = \u221a(product)/(6\u221a2). So V = 320\u221a2/(6\u221a2)=320/6=160/3. Good.\n\nThus everything consistent.\n\nSo answer: 104.\n\nNow we need to output final answer inside \\boxed{104}."
+    },
+    {
+      "id": "2024-I-5",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 5000,
+      "prompt_tokens": 95,
+      "elapsed_s": 35.63211512565613,
+      "gen_tail": "ch is not integer but could be a valid length. However, the problem likely expects an integer answer, and 104 is integer. Also the given lengths are all integers, so it's plausible that the answer is integer. Also note that e=3 gives a nice integer. So answer is 104.\n\nThus final answer: \\boxed{104}."
+    },
+    {
+      "id": "2024-II-13",
+      "expected": 321,
+      "pred": 321,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 5869,
+      "prompt_tokens": 80,
+      "elapsed_s": 40.88014030456543,
+      "gen_tail": "+129? Not exactly. Actually 65^2+64^2 = 4225+4096=8321. And 2^{n}? 2^13=8192. So product = 2^13 + 129? Not a simple pattern. But anyway.\n\nThus answer 321.\n\nBut we must ensure that the product is indeed over k=0 to 12, and we computed product = 8321. So remainder 321.\n\nThus final answer: \\boxed{321}."
+    }
+  ]
+}

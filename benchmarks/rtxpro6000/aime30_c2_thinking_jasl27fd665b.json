@@ -1,0 +1,369 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-27T05:00:26.429088+00:00",
+    "dataset": "Maxwell-Jia/AIME_2024",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 2,
+    "max_tokens": 16000,
+    "thinking": true,
+    "n": 30
+  },
+  "totals": {
+    "correct": 22,
+    "errors": 0,
+    "wallclock_s": 869.0081589221954,
+    "finish_reasons": {
+      "stop": 22,
+      "length": 8
+    }
+  },
+  "mtp_delta": {
+    "d_drafts": 116365.0,
+    "d_draft_tokens": 116365.0,
+    "d_accepted_tokens": 105133.0,
+    "acceptance_rate": 0.9034761311390882,
+    "tokens_per_step": 1.9034761311390882
+  },
+  "pre_metrics": {
+    "drafts": 131292.0,
+    "draft_tokens": 131292.0,
+    "accepted_tokens": 119813.0
+  },
+  "post_metrics": {
+    "drafts": 247657.0,
+    "draft_tokens": 247657.0,
+    "accepted_tokens": 224946.0
+  },
+  "results": [
+    {
+      "id": "2024-II-4",
+      "expected": 33,
+      "pred": 33,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2124,
+      "prompt_tokens": 165,
+      "elapsed_s": 18.094834089279175,
+      "gen_tail": "qrt(2). So log_2 = 1/2, correct.\n\ny/(xz) = 2^{-9/24} / (2^{-7/24} * 2^{-10/24}) = 2^{-9/24} / 2^{-17/24} = 2^{8/24} = 2^{1/3}. So log_2 = 1/3, correct.\n\nz/(xy) = 2^{-10/24} / (2^{-7/24} * 2^{-9/24}) = 2^{-10/24} / 2^{-16/24} = 2^{6/24} = 2^{1/4}. So log_2 = 1/4, correct.\n\nAll good.\n\nThus answer: 33."
+    },
+    {
+      "id": "2024-II-12",
+      "expected": 23,
+      "pred": 23,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4205,
+      "prompt_tokens": 186,
+      "elapsed_s": 36.25350761413574,
+      "gen_tail": " + (3\u221a3/8)^2 = 1/64 + 27/64 = 28/64 = 7/16. So p=7, q=16, p+q=23.\n\nBut wait: The problem says \"Then $OC^2 = \\tfrac{p}{q}$\", so p/q = 7/16, p+q=23. So answer is 23.\n\nHowever, we should ensure that the point C is indeed distinct from A and B, and that it is unique. Yes.\n\nThus final answer: \\boxed{23}."
+    },
+    {
+      "id": "2024-I-4",
+      "expected": 116,
+      "pred": 116,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1121,
+      "prompt_tokens": 144,
+      "elapsed_s": 10.370172023773193,
+      "gen_tail": "is 116.\n\nBut let's double-check: The probability that she wins a prize is 115/210 = 23/42? Actually 115/210 simplifies to 23/42? 115/210 = divide by 5: 23/42, yes. And grand prize probability is 1/210. So conditional = (1/210)/(115/210)=1/115. So m=1, n=115, sum=116.\n\nThus final answer: \\boxed{116}."
+    },
+    {
+      "id": "2024-I-3",
+      "expected": 809,
+      "pred": 809,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2794,
+      "prompt_tokens": 122,
+      "elapsed_s": 22.407341241836548,
+      "gen_tail": ". So answer 809.\n\nHowever, we must ensure that the game is impartial and the moves are exactly as described. There is no twist like \"Bob can guarantee a win\" meaning that Bob has a winning strategy, which is exactly when the starting position is a P-position. So yes.\n\nThus final answer: \\boxed{809}."
+    },
+    {
+      "id": "2024-I-8",
+      "expected": 197,
+      "pred": 34,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 114,
+      "elapsed_s": 125.09719967842102,
+      "gen_tail": "the last circle on the other side. So the arc of centers between the two side-touching circles has a certain central angle. The number of circles that can fit in that arc, with chord length 2r between centers, determines n. So we have a relation: The central angle subtended by the arc from the first"
+    },
+    {
+      "id": "2024-I-12",
+      "expected": 385,
+      "pred": 9,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 102,
+      "elapsed_s": 121.73172068595886,
+      "gen_tail": "substitute x = h(v), y = h(u) into the trig equations:\n\nu = |sin(2\u03c0 h(v))|\nv = |cos(3\u03c0 h(u))|\n\nSo we need to find u, v in [0,1] such that these hold. Then x = h(v), y = h(u). So the number of solutions (x,y) equals the number of (u,v) satisfying these, but note that different (u,v) might give same ("
+    },
+    {
+      "id": "2024-I-11",
+      "expected": 371,
+      "pred": 2,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 99,
+      "elapsed_s": 125.4361252784729,
+      "gen_tail": "ons where the two pairs are one from {P0,P2} and one from {P1,P3}. The set {0,2,4,6} consists of pairs P0={0,4} and P2={2,6}. That is exactly one from the first group (P0) and one from the second group? Actually P0 and P2 are both in the first group? Our grouping for k=2 was based on the condition x"
+    },
+    {
+      "id": "2024-II-11",
+      "expected": 601,
+      "pred": 601,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3617,
+      "prompt_tokens": 91,
+      "elapsed_s": 27.315287351608276,
+      "gen_tail": " 10000*200 = 2,000,000; 40000*100 = 4,000,000; sum = 6,000,000. Yes. So works.\n\nThus answer 601.\n\nBut we must ensure that we didn't miss any solutions where (a-100)(b-100)(c-100)=0 but a,b,c not necessarily nonnegative? They are nonnegative by condition. So all good.\n\nThus final answer: \\boxed{601}."
+    },
+    {
+      "id": "2024-I-2",
+      "expected": 25,
+      "pred": 25,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2519,
+      "prompt_tokens": 69,
+      "elapsed_s": 19.35763669013977,
+      "gen_tail": "y)=25/(xy) => xy=25. That is simpler. Let's verify: From first: log_x(y)=10/x. From second: log_y(x)=5/(2y). Then note that log_x(y) * log_y(x) = 1 always. So (10/x)*(5/(2y)) = 1 => 50/(2xy)=1 => 25/(xy)=1 => xy=25. Yes! So that's a clean derivation.\n\nThus answer is 25.\n\nSo final answer: \\boxed{25}."
+    },
+    {
+      "id": "2024-II-6",
+      "expected": 55,
+      "pred": 55,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1828,
+      "prompt_tokens": 85,
+      "elapsed_s": 14.49795651435852,
+      "gen_tail": " = 55.\n\nDouble-check: 2^{3}=8, 2^{5}=32, 2^{6}=64, 2^{7}=128, 2^{8}=256, 2^{9}=512, 2^{10}=1024. Sum = 8+32=40, +64=104, +128=232, +256=488, +512=1000, +1024=2024. Yes.\n\nThus answer: 55.\n\nBut the problem asks: \"Find the sum of the elements of A.\" So answer is 55.\n\nWe should output within \\boxed{55}."
+    },
+    {
+      "id": "2024-I-7",
+      "expected": 540,
+      "pred": 540,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2663,
+      "prompt_tokens": 67,
+      "elapsed_s": 20.13494062423706,
+      "gen_tail": "the fact that z is complex and we are taking real part? The expression is a complex number; its real part is as computed. So maximum is 540.\n\nThus final answer: 540.\n\nBut the instruction: \"Reason step-by-step then place your final integer answer (0-999) inside \\boxed{...}.\" So we output \\boxed{540}."
+    },
+    {
+      "id": "2024-II-3",
+      "expected": 45,
+      "pred": 45,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 2313,
+      "prompt_tokens": 144,
+      "elapsed_s": 17.763829708099365,
+      "gen_tail": "s 0, it's still a two-digit number? For example, 09 is considered as 9, but sometimes in such puzzles, they might consider it as 09, but that's still 9. So it's fine.\n\nThus the answer is 45.\n\nBut wait, the example grid: a=0,b=0,c=8 gives sum 8, works. So answer is 45.\n\nThus final answer: \\boxed{45}."
+    },
+    {
+      "id": "2024-I-1",
+      "expected": 204,
+      "pred": 204,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1788,
+      "prompt_tokens": 158,
+      "elapsed_s": 13.910228967666626,
+      "gen_tail": "t in the coffee shop\". So total time in minutes = walking time in minutes + t. Walking time at 3 km/h for 9 km: 9/3 = 3 hours = 180 minutes. Plus t=24 gives 204 minutes. So answer is 204.\n\nBut we need to ensure that the answer is an integer between 0 and 999. So 204.\n\nThus final answer: \\boxed{204}."
+    },
+    {
+      "id": "2024-II-7",
+      "expected": 699,
+      "pred": 699,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4300,
+      "prompt_tokens": 93,
+      "elapsed_s": 33.16533184051514,
+      "gen_tail": "no. So only 2 and 9. So greatest is 5694. So answer 699.\n\nBut we should double-check if any other a could satisfy? We derived a \u22615 mod7 from the consistency condition. So only a=5. So indeed only these two numbers. So N=5694.\n\nThus final answer: 699.\n\nNow we need to output the answer in \\boxed{699}."
+    },
+    {
+      "id": "2024-I-6",
+      "expected": 294,
+      "pred": 294,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3028,
+      "prompt_tokens": 78,
+      "elapsed_s": 23.250406742095947,
+      "gen_tail": " U blocks: C(8-1,2-1)=C(7,1)=7. So 21*7=147. Similarly for starting with U: 21*7=147. Total 294. So answer is 294.\n\nBut is there any possibility that the path could have a turn at the very beginning? No, because the first step doesn't count as a change. So it's fine.\n\nThus final answer: \\boxed{294}."
+    },
+    {
+      "id": "2024-I-13",
+      "expected": 110,
+      "pred": 110,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8404,
+      "prompt_tokens": 88,
+      "elapsed_s": 64.02761888504028,
+      "gen_tail": "ero. So p=13 no. p=17 works.\n\nThus p=17 is indeed the least. So answer m=110.\n\nBut we should also consider if there is any prime p less than 17 that could have a solution with n not coprime to p? If p divides n, then n^4+1 \u2261 1 mod p, not 0. So no. So p=17 is correct.\n\nThus final answer: \\boxed{110}."
+    },
+    {
+      "id": "2024-I-15",
+      "expected": 721,
+      "pred": 15,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 113,
+      "elapsed_s": 121.38817548751831,
+      "gen_tail": ".5129)=32.69. So S(a) seems to have a local minimum at some a? Actually at a=2, S=41.0625; at a=5.75, S=41.0625; at a=1.5129, S=32.69; so S increases from 1.5129 to 2, then decreases? But at a=2 it's 41.0625, at a=3 maybe? Let's compute S(3): a=3: a^2=9, 729/9=81, 1242/27=46, 529/81\u22486.5309, 46/3\u224815."
+    },
+    {
+      "id": "2024-II-15",
+      "expected": 315,
+      "pred": 1,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 78,
+      "elapsed_s": 124.08526492118835,
+      "gen_tail": ". Pairs: (0,270), (30,240), (60,210), (90,180), (120,150), (150,120), (180,90), (210,60), (240,30), (270,0), (300,330), (330,300). Distinct: (0,270): difference 270\u00b0 or 90\u00b0? 90\u00b0 (3-step), (30,240): 210\u00b0 or 150\u00b0? 150\u00b0 (5-step), (60,210): 150\u00b0 (5-step), (90,180): 90\u00b0 (3-step), (120,150): 30\u00b0 (1-step),"
+    },
+    {
+      "id": "2024-II-10",
+      "expected": 468,
+      "pred": 468,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4170,
+      "prompt_tokens": 71,
+      "elapsed_s": 31.861637353897095,
+      "gen_tail": ".172. Then s = (a+b+c)/2 = (21.908+43.816)/2=65.724/2=32.862. Then r = \u0394/s = 197.172/32.862\u22486.0, good. And R = abc/(4\u0394) = (21.908*25.372*18.444)/(4*197.172) compute? Should be 13. So consistent.\n\nThus answer is 468.\n\nNow we need to output final integer answer inside \\boxed{}. So answer: \\boxed{468}."
+    },
+    {
+      "id": "2024-II-9",
+      "expected": 902,
+      "pred": 902,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7916,
+      "prompt_tokens": 118,
+      "elapsed_s": 62.00150179862976,
+      "gen_tail": "\nHowever, I recall a known problem: \"In a 5x5 grid, place black and white stones such that each row and each column is monochromatic, and the configuration is maximal (cannot add any stone).\" The answer is often 2 + (2^5-2)^2 = 2+30^2=902. Yes, that's a known result.\n\nThus final answer: \\boxed{902}."
+    },
+    {
+      "id": "2024-II-14",
+      "expected": 211,
+      "pred": 4,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 137,
+      "elapsed_s": 122.58173441886902,
+      "gen_tail": "o three.\n\nb=17: b-1=16, \u03c9=1, count=1.\n\nb=18: b-1=17, \u03c9=1, count=1.\n\nb=19: b-1=18, \u03c9(18)=2 (2,3), count=3. So b=19: m=8? 8*9=72, 72/18=4, works. m=9? 9*10=90, 90/18=5, works. m=17? 17*18=306, 306/18=17, works. So three.\n\nb=20: b-1=19, \u03c9=1, count=1.\n\nb=21: b-1=20, \u03c9(20)=2 (2,5), count=3. So b=21: m=4?"
+    },
+    {
+      "id": "2024-II-5",
+      "expected": 80,
+      "pred": 80,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8149,
+      "prompt_tokens": 82,
+      "elapsed_s": 63.047197341918945,
+      "gen_tail": " So indeed, the triangle's sides are the lines containing AB, CD, EF. So our assignment is correct.\n\nThus final answer: 80.\n\nWe should also note that the hexagon is convex and equilateral, so all sides equal. Our derivation used that AB = s, BC = s, etc. So it's consistent.\n\nThus answer: \\boxed{80}."
+    },
+    {
+      "id": "2024-I-9",
+      "expected": 480,
+      "pred": 2,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 103,
+      "elapsed_s": 124.04971170425415,
+      "gen_tail": "nt at infinity. So the infimum is 480. Therefore, the greatest real number that is less than BD^2 for all such rhombi is 480. But is 480 less than all BD^2? For any rhombus, BD^2 > 480? Since the infimum is 480, and it's not attained, then for every rhombus, BD^2 > 480. So 480 is less than all BD^2."
+    },
+    {
+      "id": "2024-II-2",
+      "expected": 236,
+      "pred": 236,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7371,
+      "prompt_tokens": 96,
+      "elapsed_s": 56.64124298095703,
+      "gen_tail": "median=5 (in list)\n- {5,4,2,1}: n=6, median=4.5 (not integer)\n\nSo only {7,5} works.\n\nThus sum of squares = 5^2+7^2+9^2+9^2 = 25+49+81+81=236.\n\nThus answer is 236.\n\nBut wait, the problem says \"Find the sum of the squares of all the items in the list.\" So we have that.\n\nThus final answer: \\boxed{236}."
+    },
+    {
+      "id": "2024-II-1",
+      "expected": 73,
+      "pred": 73,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 1814,
+      "prompt_tokens": 124,
+      "elapsed_s": 14.348833560943604,
+      "gen_tail": "he interpretation is consistent: exactly two items total means they have C and exactly one of D,G,S; exactly three items total means they have C and exactly two of D,G,S; all four means C and all three. So our mapping is correct.\n\nThus answer is 73.\n\nWe should present the final answer in \\boxed{73}."
+    },
+    {
+      "id": "2024-I-10",
+      "expected": 113,
+      "pred": 113,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 7327,
+      "prompt_tokens": 368,
+      "elapsed_s": 56.01075077056885,
+      "gen_tail": "mmedian meets BC at K, then AK is the symmedian length. But for AP, we can use the fact that AP is the chord through A and the symmedian point on the circumcircle. There is a formula: AP = (2bc/(b^2+c^2)) * (circumdiameter)? Not sure. But our coordinate method gave a clean answer.\n\nThus answer: 113."
+    },
+    {
+      "id": "2024-II-8",
+      "expected": 127,
+      "pred": 11,
+      "correct": false,
+      "finish": "length",
+      "completion_tokens": 16000,
+      "prompt_tokens": 183,
+      "elapsed_s": 124.74765825271606,
+      "gen_tail": "s \"T rests on the outside of S\" meaning the torus is outside the sphere. So external tangency corresponds to the sphere's radius being the minimum distance from sphere center to torus, i.e., 11 = L - a (assuming L > a). For internal tangency, the torus is inside the sphere, so the sphere's radius is"
+    },
+    {
+      "id": "2024-I-14",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 3147,
+      "prompt_tokens": 162,
+      "elapsed_s": 24.277754068374634,
+      "gen_tail": "fine.\n\nThus answer: 104.\n\nBut wait: The problem says \"There exists a point I inside the tetrahedron such that the distances from I to each of the faces of the tetrahedron are all equal.\" That point is the incenter, and the distance is the inradius. So we are correct.\n\nThus final answer: \\boxed{104}."
+    },
+    {
+      "id": "2024-I-5",
+      "expected": 104,
+      "pred": 104,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 8643,
+      "prompt_tokens": 95,
+      "elapsed_s": 66.46241092681885,
+      "gen_tail": " D, C. So D, E, C, F are not in order; D is between F and C, E is leftmost. So the listing \"D, E, C, F\" would not be in order. So likely the intended order is D, E, C, F in that order, so e=3 is the correct one. Also e=3 gives a nice integer CE=104. So answer is 104.\n\nThus final answer: \\boxed{104}."
+    },
+    {
+      "id": "2024-II-13",
+      "expected": 321,
+      "pred": 321,
+      "correct": true,
+      "finish": "stop",
+      "completion_tokens": 4272,
+      "prompt_tokens": 80,
+      "elapsed_s": 30.277409315109253,
+      "gen_tail": "-\u03b1^3 = 1-(-2+2i)=3-2i, 1-\u03b2^3=3+2i, product = 9+4=13. Yes matches. So method works.\n\nThus for n=13, product = 65^2+64^2 = 4225+4096=8321. So answer 321.\n\nBut wait: The product is over k=0 to 12, but we used all 13th roots including 1. That's correct. So answer is 321.\n\nThus final answer: \\boxed{321}."
+    }
+  ]
+}
