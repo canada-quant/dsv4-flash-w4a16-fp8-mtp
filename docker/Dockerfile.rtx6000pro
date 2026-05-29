@@ -1,0 +1,172 @@
+# syntax=docker/dockerfile:1.7
+# canada-quant DSv4 NVFP4/W4A16 + MTP on RTX PRO 6000 Blackwell Server Edition (SM 12.0)
+#
+# Image bakes the v3 recipe (scripts/install_rtx6000pro_v3.sh) verified 2026-05-27.
+# Mainline vllm-project/vllm@main is currently blocked at first forward on SM 12.0
+# by DeepGEMM Hopper-only kernels (`fp8_einsum`, `tf32_hc_prenorm_gemm`).
+# jasl/vllm@27fd665b carries `sm12x_deep_gemm_fallbacks.py` + sibling shim files
+# that route to Triton fallbacks on SM 12.0 until upstream PRs land.
+#
+# Build (on a host with NVIDIA Container Toolkit + ≥30 GB free disk):
+#
+#   docker build \
+#     --build-arg TORCH_CUDA_ARCH_LIST=12.0a \
+#     -f docker/Dockerfile.rtx6000pro \
+#     -t canada-quant/dsv4-rtx6000pro:v3 \
+#     .
+#
+# Run (mount HF cache so the 172 GB Card B doesn't have to re-download):
+#
+#   docker run --gpus all --rm -it \
+#     --shm-size=16g --ipc=host \
+#     -p 8000:8000 \
+#     -v $HOME/.cache/huggingface:/root/.cache/huggingface \
+#     -e HF_TOKEN=$HF_TOKEN \
+#     canada-quant/dsv4-rtx6000pro:v3 \
+#     vllm serve canada-quant/DeepSeek-V4-Flash-NVFP4-FP8-MTP \
+#       --tensor-parallel-size 4 \
+#       --kv-cache-dtype fp8 --block-size 256 \
+#       --max-model-len 32768 \
+#       --max-num-seqs 8 --max-num-batched-tokens 8192 \
+#       --gpu-memory-utilization 0.95 \
+#       --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+#       --tokenizer-mode deepseek_v4 \
+#       --reasoning-parser deepseek_v4 \
+#       --tool-call-parser deepseek_v4 --enable-auto-tool-choice \
+#       --disable-custom-all-reduce \
+#       --trust-remote-code \
+#       --host 0.0.0.0 --port 8000
+#
+# NGC base ships CUDA 12.9 + PyTorch 2.7 + Python 3.12 — matches the host
+# toolkit on a fresh g7e.24xlarge DLAMI (2026-05).
+
+ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:25.04-py3
+FROM ${BASE_IMAGE}
+
+ARG VLLM_REPO=https://github.com/jasl/vllm.git
+ARG VLLM_BRANCH=ds4-sm120-preview-dev
+ARG VLLM_PIN=27fd665bdc3ba58afc5c34cbb9034c9fc1a95029
+ARG TORCH_CUDA_ARCH_LIST=12.0a
+ARG MAX_JOBS=12
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VLLM_TEST_FORCE_FP8_MARLIN=1 \
+    HF_HUB_ENABLE_HF_TRANSFER=1 \
+    HF_XET_HIGH_PERFORMANCE=1 \
+    TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
+    MAX_JOBS=${MAX_JOBS} \
+    CMAKE_BUILD_PARALLEL_LEVEL=${MAX_JOBS} \
+    VLLM_USE_PRECOMPILED=0
+
+# System deps. NGC PyTorch already has CUDA + nvcc + most tooling.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates \
+        build-essential ninja-build pkg-config \
+        libnuma-dev libnccl-dev libnccl2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Modern cmake (system on jammy is 3.22; vLLM needs ≥3.26)
+RUN pip install --upgrade pip setuptools wheel packaging \
+    && pip install --upgrade "cmake>=3.30" ninja
+
+# Clone jasl/vllm at the SM 12.0 verified pin.
+WORKDIR /opt
+RUN git clone --branch ${VLLM_BRANCH} ${VLLM_REPO} vllm-jasl \
+    && cd vllm-jasl \
+    && git checkout ${VLLM_PIN} \
+    && echo "jasl/vllm pinned at $(git rev-parse --short HEAD)"
+
+WORKDIR /opt/vllm-jasl
+
+# Patch 1 — PR #43722 (MarlinFP8.can_implement block-FP8 refuse)
+RUN python3 - <<'PYEOF'
+F = "vllm/model_executor/kernels/linear/scaled_mm/marlin.py"
+src = open(F).read()
+marker = '    @classmethod\n    def can_implement(cls, c: FP8ScaledMMLinearLayerConfig) -> tuple[bool, str | None]:\n        return True, None'
+new = """    @classmethod
+    def can_implement(cls, c: FP8ScaledMMLinearLayerConfig) -> tuple[bool, str | None]:
+        # canada-quant 2026-05-26: MarlinFP8 cannot serve block-FP8 layers; let
+        # dispatcher fall through to TritonFp8BlockScaledMMKernel. PR #43722.
+        try:
+            if c.activation_quant_key.scale.group_shape.is_per_group():
+                return False, "MarlinFP8 cannot serve block-FP8 layers"
+        except Exception:
+            pass
+        return True, None"""
+if marker in src and "MarlinFP8 cannot serve block-FP8" not in src:
+    open(F, "w").write(src.replace(marker, new, 1))
+    print("[patch] PR #43722 applied")
+else:
+    print("[patch] PR #43722 already applied or marker not found")
+PYEOF
+
+# Patch 2 — PR #43723 (DSv4 wo_a scale getattr fallback)
+RUN python3 - <<'PYEOF'
+F = "vllm/models/deepseek_v4/nvidia/ops/attention.py"
+src = open(F).read()
+marker = "        wo_a_fp8 = self.wo_a.weight\n        wo_a_scale = self.wo_a.weight_scale_inv"
+new = """        wo_a_fp8 = self.wo_a.weight
+        # canada-quant 2026-05-26: non-Marlin kernels (Triton block-FP8, Cutlass,
+        # DeepGemm) leave the on-disk name `weight_scale`. PR #43723.
+        wo_a_scale = getattr(self.wo_a, "weight_scale_inv", None)
+        if wo_a_scale is None:
+            wo_a_scale = self.wo_a.weight_scale"""
+if marker in src and "canada-quant 2026-05-26" not in src.split("wo_a_scale")[0]:
+    open(F, "w").write(src.replace(marker, new, 1))
+    print("[patch] PR #43723 applied")
+else:
+    print("[patch] PR #43723 already applied or marker not found")
+PYEOF
+
+# Patch 3 — PR #41834 tuned Triton block-FP8 autotune configs for sm_120
+RUN git fetch https://github.com/vllm-project/vllm.git refs/pull/41834/head:pr-41834 || true \
+    && (git checkout pr-41834 -- \
+            vllm/model_executor/layers/quantization/utils/configs/ \
+            vllm/model_executor/layers/fused_moe/configs/ 2>/dev/null \
+        || echo "[patch] PR #41834 configs already present (skipping)") \
+    && echo "[patch] PR #41834 tuned configs applied"
+
+# Patch 4 — Marlin MoE workspace 4× oversize (defensive vs cudaErrorIllegalAddress
+# under concurrent W4A16 decode; harmless for NVFP4-only Card B serve).
+RUN sed -i 's/sms \* max_blocks_per_sm, dtype=torch.int/sms * max_blocks_per_sm * 4, dtype=torch.int/' \
+        vllm/model_executor/layers/quantization/utils/marlin_utils.py \
+    && echo "[patch] workspace 4× applied"
+
+# Patch 5 — PR #40923 (Marlin sm_120a;sm_121a native cubins) — usually already
+# in jasl@27fd665b. Apply only if marker missing.
+RUN if ! grep -q "12.0a;12.1a" CMakeLists.txt; then \
+        git fetch https://github.com/vllm-project/vllm.git refs/pull/40923/head:pr-40923 || true; \
+        git diff main..pr-40923 -- CMakeLists.txt > /tmp/pr_40923_cmake.diff 2>/dev/null || true; \
+        git apply /tmp/pr_40923_cmake.diff 2>/dev/null || echo "[patch] PR #40923 already in jasl base"; \
+    else \
+        echo "[patch] PR #40923 already in jasl base"; \
+    fi
+
+# vLLM kernel compile (~30-45 min on 12 vCPUs).
+# --no-deps because the NGC PyTorch base already pins torch/triton/etc.
+RUN pip install --no-build-isolation --no-deps -v -e .
+
+# DeepGEMM Python package — imported by vllm.utils.deep_gemm; jasl's sm12x
+# fallbacks dispatch to Triton, but the deep_gemm module must still be importable.
+RUN if [ -d "/opt/vllm-jasl/.deps/deepgemm-src" ]; then \
+        cd /opt/vllm-jasl/.deps/deepgemm-src \
+        && pip install --no-build-isolation --no-deps . ; \
+    fi
+
+# Runtime deps for serve + eval harnesses.
+RUN pip install --upgrade \
+        huggingface_hub hf-transfer hf_xet \
+        langdetect immutabledict nltk \
+        evalplus openai datasets sentencepiece
+
+EXPOSE 8000
+
+# Sanity check baked into the image: import vllm + verify CUDA visibility
+# happens at `docker run`, not at build time (build host may have no GPU).
+LABEL org.opencontainers.image.title="canada-quant/dsv4-rtx6000pro" \
+      org.opencontainers.image.description="vLLM jasl/vllm@${VLLM_PIN} + 5 patches for DeepSeek-V4-Flash NVFP4/W4A16+MTP on RTX PRO 6000 Blackwell Server Edition (SM 12.0)" \
+      org.opencontainers.image.source="https://github.com/canada-quant/dsv4-flash-nvfp4-fp8-mtp"
+
+WORKDIR /workspace
