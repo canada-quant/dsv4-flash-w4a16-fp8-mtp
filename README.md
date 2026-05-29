@@ -47,7 +47,58 @@ vllm serve /scratch/weights/w4a16-fp8-mtp-gptq \
     --trust-remote-code
 ```
 
-### RTX PRO 6000 Blackwell deployment (Brev `g7e.24xlarge` or equivalent)
+### RTX PRO 6000 Blackwell — Docker (recommended)
+
+The fastest path on RTX PRO 6000 Blackwell Server Edition (SM 12.0) is the
+pre-built [`canada-quant/dsv4-rtx6000pro:v3`](https://huggingface.co/datasets/canada-quant/dsv4-flash-w4a16-rtxpro6000-image)
+image, which bakes the full 13-layer recipe (`jasl/vllm@27fd665b` + canada-quant
+BF16 MTP cherry-pick + Marlin MoE c_tmp/workspace patches + `cute.arch.fmin`
+shim). Boots straight to a working `vllm serve` endpoint in ~3-5 min on a
+g7e.24xlarge.
+
+```bash
+# 1) Pull image (~14 GB compressed, ~47 GB on disk)
+docker pull canada-quant/dsv4-rtx6000pro:v3
+
+# 2) Pre-cache the W4A16 model onto NVMe (~159 GB; 1-2 min via xet on Brev)
+HF_HOME=/opt/dlami/nvme/hf-cache hf download \
+    canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP
+
+# 3) Serve TP=2 (2× RTX PRO 6000) or TP=4 (4× RTX PRO 6000)
+docker run -d --gpus '"device=0,1"' --name dsv4-w4a16-serve \
+    --shm-size=16g --ipc=host -p 8000:8000 \
+    -v /opt/dlami/nvme/hf-cache:/root/.cache/huggingface \
+    -v $(pwd)/scripts:/workspace/scripts:ro \
+    -e TP=2 -e MAX_NUM_SEQS=4 -e MAX_MODEL_LEN=65536 -e GPU_MEM_UTIL=0.95 \
+    canada-quant/dsv4-rtx6000pro:v3 \
+    bash /workspace/scripts/serve_rtx6000pro_w4a16.sh
+
+# 4) Wait for /v1/models (~4-5 min model load + cudagraph capture)
+until curl -sf http://127.0.0.1:8000/v1/models >/dev/null; do sleep 5; done
+
+# 5) Smoke test
+curl -sX POST http://127.0.0.1:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{"model":"DSV4-W4A16-FP8-MTP",
+         "messages":[{"role":"user","content":"What is 17*23?"}],
+         "max_tokens":60,"temperature":0}' | jq .choices[0].message.content
+
+# 6) Run the full bench matrix (AIME mode sweep + GSM8K + throughput)
+docker exec dsv4-w4a16-serve bash -c \
+    "TAG=tp2_64k MAX_MODEL_LEN=65536 bash /workspace/scripts/bench_matrix.sh"
+```
+
+Notes:
+- The image is published at `canada-quant/dsv4-flash-w4a16-rtxpro6000-image`
+  on HF as a dataset; pull via `docker load < $(hf download canada-quant/dsv4-flash-w4a16-rtxpro6000-image --include "*.tar.gz" --local-dir .)`.
+- For TP=4 (single replica, all 4 GPUs), use `--gpus all -e TP=4 -e MAX_NUM_SEQS=16`.
+- All `bench_matrix.sh` AIME runs set `max_tokens = max_model_len - 500` so
+  reasoning runs to its natural stop instead of being capped.
+- See [`docker/Dockerfile.rtx6000pro`](docker/Dockerfile.rtx6000pro) if you
+  want to rebuild the image from source — the recipe is the same one we used
+  to build v3 (~25 min on a clean g7e.24xlarge).
+
+### RTX PRO 6000 Blackwell — from-source install (advanced)
 
 ```bash
 # 1) Bootstrap vLLM source build (~25 min)
