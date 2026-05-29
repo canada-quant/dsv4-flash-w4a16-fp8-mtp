@@ -95,7 +95,7 @@ async def one_request(
     model: str,
     prompt: str,
     max_tokens: int,
-    thinking: bool,
+    thinking: "bool | str",
     semaphore: asyncio.Semaphore,
 ) -> dict:
     payload = {
@@ -105,7 +105,20 @@ async def one_request(
         "temperature": 0.0,
         "stream": False,
     }
-    if thinking:
+    # `thinking` is either True/False (legacy) or a string mode:
+    # "none"/"chat" → chat mode, "low"/"medium"/"high"/"max" → reasoning_effort.
+    # DS-V4 parser aliases low/medium → high, so the effective modes are
+    # chat | high | max.
+    if isinstance(thinking, str):
+        mode = thinking.lower()
+        if mode in ("none", "chat", "false", "off"):
+            pass  # no chat_template_kwargs → chat mode
+        else:
+            payload["chat_template_kwargs"] = {
+                "thinking": True,
+                "reasoning_effort": mode,
+            }
+    elif thinking:
         payload["chat_template_kwargs"] = {"thinking": True}
 
     async with semaphore:
@@ -141,7 +154,8 @@ async def run(args):
     items = list(ds)
     if args.n and args.n < len(items):
         items = items[: args.n]
-    print(f"[aime] {len(items)} problems, concurrency={args.concurrency}, max_tokens={args.max_tokens}, thinking={args.thinking}", flush=True)
+    mode_desc = args.thinking if isinstance(args.thinking, str) else ("high" if args.thinking else "chat")
+    print(f"[aime] {len(items)} problems, concurrency={args.concurrency}, max_tokens={args.max_tokens}, mode={mode_desc}", flush=True)
 
     sem = asyncio.Semaphore(args.concurrency)
     metrics_before = fetch_metrics(args.base_url)
@@ -248,9 +262,19 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=16384)
     ap.add_argument("--thinking", action="store_true", default=True)
     ap.add_argument("--no-thinking", dest="thinking", action="store_false")
+    ap.add_argument(
+        "--reasoning-effort",
+        choices=["none", "chat", "low", "medium", "high", "max"],
+        default=None,
+        help="When set, overrides --thinking/--no-thinking. 'none'/'chat' = no thinking; "
+             "DS-V4 parser aliases low/medium → high, so the effective distinct modes "
+             "are chat | high | max.",
+    )
     ap.add_argument("--n", type=int, default=0, help="0 = all 30")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    if args.reasoning_effort is not None:
+        args.thinking = args.reasoning_effort
     asyncio.run(run(args))
 
 

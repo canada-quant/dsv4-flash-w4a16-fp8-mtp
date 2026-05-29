@@ -1,37 +1,43 @@
 #!/usr/bin/env bash
 # bench_matrix.sh — full W4A16 bench suite against a running vllm serve.
 #
-# Drives every test we need to publish: AIME-2024 thinking at c=1/2/4, GSM8K-50
-# at c=8, throughput sweep bs=1/4/8/16 random 256/256 + bs=1/4 random 1024/1024.
-# All AIME runs set max_tokens to the full max_model_len budget (minus prompt
-# room) so reasoning is never truncated — quality scores represent the model's
-# true capability, not the cap we picked.
+# AIME-2024 phase covers two axes:
+#   - thinking-mode comparison at c=4 across {chat, high, max} (3 runs)
+#   - thinking=high single-shot reference at c=1 (1 run)
+# All AIME runs set max_tokens to max_model_len-500 so reasoning runs to natural
+# stop. DS-V4 reasoning parser aliases low/medium → high, so chat/high/max are
+# the only effective distinct modes.
 #
-# Usage (inside container):
-#   TAG=tp2_32k bash /workspace/scripts/bench_matrix.sh
-#   TAG=tp4_32k bash /workspace/scripts/bench_matrix.sh
+# Throughput: vllm bench serve, random 256/256 at bs=1/4/8/16 and 1024/1024 at
+# bs=1/4. GSM8K-50 c=8 strict-match.
 #
-# Env:
+# Usage (inside container, after vllm is up):
+#   TAG=tp2_64k MAX_MODEL_LEN=65536 bash /workspace/scripts/bench_matrix.sh
+#   TAG=tp4_64k MAX_MODEL_LEN=65536 bash /workspace/scripts/bench_matrix.sh
+#
+# Env knobs:
 #   TAG               output filename suffix (required)
 #   BASE_URL          vllm endpoint (default http://127.0.0.1:8000)
-#   MODEL_NAME        served model name (default DSV4-W4A16-FP8-MTP)
-#   MODEL_ID          repo id for tokenizer in bench serve (default canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP)
-#   MAX_MODEL_LEN     window cap, used to size AIME max_tokens (default 32768)
+#   MODEL_NAME        served name (default DSV4-W4A16-FP8-MTP)
+#   MODEL_ID          tokenizer ref (default canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP)
+#   MAX_MODEL_LEN     window cap (default 65536) — drives AIME max_tokens
 #   OUT_DIR           bench-out subdir (default /workspace/bench-out)
-#   AIME_CONCS        space-separated concurrencies for AIME (default "1 2 4")
-#   BS_RANDOM_256     space-separated batch sizes for 256/256 sweep (default "1 4 8 16")
-#   BS_RANDOM_1024    space-separated batch sizes for 1024/1024 sweep (default "1 4")
+#   AIME_MODES        space-separated modes for AIME c=4 sweep (default "chat high max")
+#   AIME_C1_MODE      mode for the c=1 single-shot reference run (default high)
+#   BS_RANDOM_256     batch sizes for 256/256 sweep (default "1 4 8 16")
+#   BS_RANDOM_1024    batch sizes for 1024/1024 sweep (default "1 4")
 #   SKIP_AIME / SKIP_GSM / SKIP_THROUGHPUT — set to 1 to skip a phase
 
 set -uo pipefail
 
-TAG="${TAG:?TAG required (e.g. tp2_32k or tp4_32k)}"
+TAG="${TAG:?TAG required (e.g. tp2_64k or tp4_64k)}"
 BASE_URL="${BASE_URL:-http://127.0.0.1:8000}"
 MODEL_NAME="${MODEL_NAME:-DSV4-W4A16-FP8-MTP}"
 MODEL_ID="${MODEL_ID:-canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
 OUT_DIR="${OUT_DIR:-/workspace/bench-out}"
-AIME_CONCS="${AIME_CONCS:-1 2 4}"
+AIME_MODES="${AIME_MODES:-chat high max}"
+AIME_C1_MODE="${AIME_C1_MODE:-high}"
 BS_RANDOM_256="${BS_RANDOM_256:-1 4 8 16}"
 BS_RANDOM_1024="${BS_RANDOM_1024:-1 4}"
 
@@ -47,33 +53,60 @@ echo >> "$SUMMARY"
 log() { echo "[bench $(date -u +%H:%M:%S)] $*" | tee -a "$OUT_DIR/${TAG}.runlog"; }
 log "TAG=$TAG MAX_MODEL_LEN=$MAX_MODEL_LEN AIME_MAX_TOKENS=$AIME_MAX_TOKENS"
 
-# ---- Phase 1: AIME-30 thinking at c=1, c=2, c=4 ----
+# ---- Phase 1A: AIME-30 thinking-mode sweep at c=4 ----
 if [ -z "${SKIP_AIME:-}" ]; then
-    echo "## AIME-2024 thinking-mode (max_tokens=$AIME_MAX_TOKENS, n=30)" >> "$SUMMARY"
-    echo "| c | correct/30 | errors | stop | length | MTP accept | wall s |" >> "$SUMMARY"
+    echo "## AIME-2024 thinking-mode sweep at c=4 (max_tokens=$AIME_MAX_TOKENS, n=30)" >> "$SUMMARY"
+    echo "| mode | correct/30 | errors | stop | length | MTP accept | wall s |" >> "$SUMMARY"
     echo "|---|---|---|---|---|---|---|" >> "$SUMMARY"
-    for C in $AIME_CONCS; do
-        OUT="$OUT_DIR/${TAG}_aime30_c${C}_thinking.json"
-        LOG="$OUT_DIR/${TAG}_aime30_c${C}_thinking.log"
-        log "AIME-30 c=$C thinking → $OUT"
+    for MODE in $AIME_MODES; do
+        OUT="$OUT_DIR/${TAG}_aime30_c4_${MODE}.json"
+        LOG="$OUT_DIR/${TAG}_aime30_c4_${MODE}.log"
+        log "AIME-30 c=4 mode=$MODE → $OUT"
         python3 /workspace/scripts/aime_thinking_bench.py \
             --base-url "$BASE_URL" --model "$MODEL_NAME" \
-            --concurrency "$C" --max-tokens "$AIME_MAX_TOKENS" \
-            --out "$OUT" > "$LOG" 2>&1 || log "  c=$C aime failed (see $LOG)"
+            --concurrency 4 --max-tokens "$AIME_MAX_TOKENS" \
+            --reasoning-effort "$MODE" \
+            --out "$OUT" > "$LOG" 2>&1 || log "  mode=$MODE aime failed (see $LOG)"
         if [ -f "$OUT" ]; then
-            python3 - "$OUT" "$C" >> "$SUMMARY" <<'PYEOF'
+            python3 - "$OUT" "$MODE" >> "$SUMMARY" <<'PYEOF'
 import json, sys
-p, c = sys.argv[1], sys.argv[2]
+p, mode = sys.argv[1], sys.argv[2]
 d = json.load(open(p))
 t = d["totals"]; m = d["mtp_delta"]; fr = t["finish_reasons"]
 acc = m.get("acceptance_rate")
 acc_s = f"{acc*100:.2f}%" if acc is not None else "n/a"
-print(f"| {c} | {t['correct']}/30 | {t['errors']} | {fr.get('stop',0)} | {fr.get('length',0)} | {acc_s} | {t['wallclock_s']:.0f} |")
+print(f"| {mode} | {t['correct']}/30 | {t['errors']} | {fr.get('stop',0)} | {fr.get('length',0)} | {acc_s} | {t['wallclock_s']:.0f} |")
 PYEOF
         else
-            echo "| $C | FAIL | — | — | — | — | — |" >> "$SUMMARY"
+            echo "| $MODE | FAIL | — | — | — | — | — |" >> "$SUMMARY"
         fi
     done
+    echo >> "$SUMMARY"
+
+    # ---- Phase 1B: AIME-30 c=1 reference (single-shot quality) ----
+    OUT="$OUT_DIR/${TAG}_aime30_c1_${AIME_C1_MODE}.json"
+    LOG="$OUT_DIR/${TAG}_aime30_c1_${AIME_C1_MODE}.log"
+    log "AIME-30 c=1 single-shot mode=$AIME_C1_MODE → $OUT"
+    python3 /workspace/scripts/aime_thinking_bench.py \
+        --base-url "$BASE_URL" --model "$MODEL_NAME" \
+        --concurrency 1 --max-tokens "$AIME_MAX_TOKENS" \
+        --reasoning-effort "$AIME_C1_MODE" \
+        --out "$OUT" > "$LOG" 2>&1 || log "  c=1 aime failed"
+    echo "## AIME-2024 c=1 single-shot (mode=$AIME_C1_MODE, max_tokens=$AIME_MAX_TOKENS)" >> "$SUMMARY"
+    echo "| c | correct/30 | errors | stop | length | MTP accept | wall s |" >> "$SUMMARY"
+    echo "|---|---|---|---|---|---|---|" >> "$SUMMARY"
+    if [ -f "$OUT" ]; then
+        python3 - "$OUT" >> "$SUMMARY" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+t = d["totals"]; m = d["mtp_delta"]; fr = t["finish_reasons"]
+acc = m.get("acceptance_rate")
+acc_s = f"{acc*100:.2f}%" if acc is not None else "n/a"
+print(f"| 1 | {t['correct']}/30 | {t['errors']} | {fr.get('stop',0)} | {fr.get('length',0)} | {acc_s} | {t['wallclock_s']:.0f} |")
+PYEOF
+    else
+        echo "| 1 | FAIL | — | — | — | — | — |" >> "$SUMMARY"
+    fi
     echo >> "$SUMMARY"
 fi
 
@@ -88,16 +121,16 @@ if [ -z "${SKIP_GSM:-}" ]; then
         --num_fewshot 8 \
         --limit 50 \
         --output_path "$OUT" > "$LOG" 2>&1 || log "  GSM8K failed"
-    echo "## GSM8K-50 c=8 (strict-match)" >> "$SUMMARY"
+    echo "## GSM8K-50 c=8 (strict-match, 8-shot)" >> "$SUMMARY"
     if grep -q "strict-match" "$LOG" 2>/dev/null; then
-        grep -A1 "strict-match" "$LOG" | tail -2 | sed 's/^/    /' >> "$SUMMARY"
+        grep -A1 "strict-match\|exact_match" "$LOG" | tail -6 | sed 's/^/    /' >> "$SUMMARY"
     else
         echo "    see $LOG" >> "$SUMMARY"
     fi
     echo >> "$SUMMARY"
 fi
 
-# ---- Phase 3: throughput sweep (random 256/256) ----
+# ---- Phase 3: throughput sweep ----
 if [ -z "${SKIP_THROUGHPUT:-}" ]; then
     echo "## Throughput sweep — random 256/256 (MTP-on)" >> "$SUMMARY"
     echo "| bs | output tok/s | TPOT median ms | TPOT p99 ms | wall s |" >> "$SUMMARY"
