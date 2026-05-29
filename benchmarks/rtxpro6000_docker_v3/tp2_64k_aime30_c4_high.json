@@ -1,0 +1,291 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-29T12:34:58.157549+00:00",
+    "dataset": "Maxwell-Jia/AIME_2024",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 4,
+    "max_tokens": 65036,
+    "thinking": "high",
+    "n": 30
+  },
+  "totals": {
+    "correct": 27,
+    "errors": 2,
+    "wallclock_s": 9161.211967945099,
+    "finish_reasons": {
+      "stop": 27,
+      "length": 1
+    }
+  },
+  "mtp_delta": {
+    "d_drafts": 202446.0,
+    "d_draft_tokens": 202446.0,
+    "d_accepted_tokens": 186199.0,
+    "acceptance_rate": 0.9197465003013149,
+    "tokens_per_step": null
+  },
+  "details": [
+    {
+      "id": "2024-II-4",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 127.95165944099426,
+      "completion_tokens": 1405,
+      "predicted": 33,
+      "ground_truth": 33
+    },
+    {
+      "id": "2024-II-12",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1001.8608090877533,
+      "completion_tokens": 8161,
+      "predicted": 23,
+      "ground_truth": 23
+    },
+    {
+      "id": "2024-I-4",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 237.12370347976685,
+      "completion_tokens": 2384,
+      "predicted": 116,
+      "ground_truth": 116
+    },
+    {
+      "id": "2024-I-3",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 271.76256585121155,
+      "completion_tokens": 2737,
+      "predicted": 809,
+      "ground_truth": 809
+    },
+    {
+      "id": "2024-I-8",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-I-12",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-I-11",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 3071.053824901581,
+      "completion_tokens": 18930,
+      "predicted": 371,
+      "ground_truth": 371
+    },
+    {
+      "id": "2024-II-11",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 775.7439937591553,
+      "completion_tokens": 4081,
+      "predicted": 601,
+      "ground_truth": 601
+    },
+    {
+      "id": "2024-I-2",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 425.61646246910095,
+      "completion_tokens": 1859,
+      "predicted": 25,
+      "ground_truth": 25
+    },
+    {
+      "id": "2024-II-6",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 542.7559695243835,
+      "completion_tokens": 2393,
+      "predicted": 55,
+      "ground_truth": 55
+    },
+    {
+      "id": "2024-I-7",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 320.6316649913788,
+      "completion_tokens": 1519,
+      "predicted": 540,
+      "ground_truth": 540
+    },
+    {
+      "id": "2024-II-3",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 159.18016743659973,
+      "completion_tokens": 2199,
+      "predicted": 45,
+      "ground_truth": 45
+    },
+    {
+      "id": "2024-I-1",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 74.65593576431274,
+      "completion_tokens": 1053,
+      "predicted": 204,
+      "ground_truth": 204
+    },
+    {
+      "id": "2024-II-7",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 277.4700243473053,
+      "completion_tokens": 3885,
+      "predicted": 699,
+      "ground_truth": 699
+    },
+    {
+      "id": "2024-I-6",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 149.92570900917053,
+      "completion_tokens": 2069,
+      "predicted": 294,
+      "ground_truth": 294
+    },
+    {
+      "id": "2024-I-13",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 462.5042612552643,
+      "completion_tokens": 6100,
+      "predicted": 110,
+      "ground_truth": 110
+    },
+    {
+      "id": "2024-I-15",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1942.4468743801117,
+      "completion_tokens": 17210,
+      "predicted": 721,
+      "ground_truth": 721
+    },
+    {
+      "id": "2024-II-15",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 3462.670053958893,
+      "completion_tokens": 38167,
+      "predicted": 315,
+      "ground_truth": 315
+    },
+    {
+      "id": "2024-II-10",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 257.3752110004425,
+      "completion_tokens": 2975,
+      "predicted": 468,
+      "ground_truth": 468
+    },
+    {
+      "id": "2024-II-9",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 2552.644183397293,
+      "completion_tokens": 25471,
+      "predicted": 902,
+      "ground_truth": 902
+    },
+    {
+      "id": "2024-II-14",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1953.2614414691925,
+      "completion_tokens": 17748,
+      "predicted": 211,
+      "ground_truth": 211
+    },
+    {
+      "id": "2024-II-5",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 3438.7050726413727,
+      "completion_tokens": 48701,
+      "predicted": 80,
+      "ground_truth": 80
+    },
+    {
+      "id": "2024-I-9",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 966.1589040756226,
+      "completion_tokens": 13532,
+      "predicted": 480,
+      "ground_truth": 480
+    },
+    {
+      "id": "2024-II-2",
+      "ok": false,
+      "finish_reason": "length",
+      "wall_s": 2653.320275783539,
+      "completion_tokens": 65036,
+      "predicted": null,
+      "ground_truth": 236
+    },
+    {
+      "id": "2024-II-1",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 102.31607031822205,
+      "completion_tokens": 1416,
+      "predicted": 73,
+      "ground_truth": 73
+    },
+    {
+      "id": "2024-I-10",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1039.2506670951843,
+      "completion_tokens": 14534,
+      "predicted": 113,
+      "ground_truth": 113
+    },
+    {
+      "id": "2024-II-8",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1433.9955489635468,
+      "completion_tokens": 19910,
+      "predicted": 127,
+      "ground_truth": 127
+    },
+    {
+      "id": "2024-I-14",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 384.651255607605,
+      "completion_tokens": 5405,
+      "predicted": 104,
+      "ground_truth": 104
+    },
+    {
+      "id": "2024-I-5",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 232.10322093963623,
+      "completion_tokens": 3208,
+      "predicted": 104,
+      "ground_truth": 104
+    },
+    {
+      "id": "2024-II-13",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 325.1250202655792,
+      "completion_tokens": 4588,
+      "predicted": 321,
+      "ground_truth": 321
+    }
+  ]
+}

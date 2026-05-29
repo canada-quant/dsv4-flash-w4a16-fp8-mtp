@@ -1,0 +1,279 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-05-29T15:31:22.853831+00:00",
+    "dataset": "Maxwell-Jia/AIME_2024",
+    "model": "DSV4-W4A16-FP8-MTP",
+    "concurrency": 4,
+    "max_tokens": 65036,
+    "thinking": "max",
+    "n": 30
+  },
+  "totals": {
+    "correct": 24,
+    "errors": 5,
+    "wallclock_s": 10583.206338644028,
+    "finish_reasons": {
+      "stop": 24,
+      "length": 1
+    }
+  },
+  "mtp_delta": {
+    "d_drafts": 290523.0,
+    "d_draft_tokens": 290523.0,
+    "d_accepted_tokens": 268787.0,
+    "acceptance_rate": 0.9251832040836698,
+    "tokens_per_step": null
+  },
+  "details": [
+    {
+      "id": "2024-II-4",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 176.65462279319763,
+      "completion_tokens": 1841,
+      "predicted": 33,
+      "ground_truth": 33
+    },
+    {
+      "id": "2024-II-12",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 695.1607296466827,
+      "completion_tokens": 7825,
+      "predicted": 23,
+      "ground_truth": 23
+    },
+    {
+      "id": "2024-I-4",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 224.16243290901184,
+      "completion_tokens": 2354,
+      "predicted": 116,
+      "ground_truth": 116
+    },
+    {
+      "id": "2024-I-3",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 401.950941324234,
+      "completion_tokens": 4323,
+      "predicted": 809,
+      "ground_truth": 809
+    },
+    {
+      "id": "2024-I-8",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-I-12",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-I-11",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-II-11",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 883.4815645217896,
+      "completion_tokens": 8809,
+      "predicted": 601,
+      "ground_truth": 601
+    },
+    {
+      "id": "2024-I-2",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 501.8256151676178,
+      "completion_tokens": 6573,
+      "predicted": 25,
+      "ground_truth": 25
+    },
+    {
+      "id": "2024-II-6",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 260.3857295513153,
+      "completion_tokens": 3589,
+      "predicted": 55,
+      "ground_truth": 55
+    },
+    {
+      "id": "2024-I-7",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 237.76145148277283,
+      "completion_tokens": 3298,
+      "predicted": 540,
+      "ground_truth": 540
+    },
+    {
+      "id": "2024-II-3",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 534.6852116584778,
+      "completion_tokens": 7400,
+      "predicted": 45,
+      "ground_truth": 45
+    },
+    {
+      "id": "2024-I-1",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 84.54509997367859,
+      "completion_tokens": 1177,
+      "predicted": 204,
+      "ground_truth": 204
+    },
+    {
+      "id": "2024-II-7",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 397.7010064125061,
+      "completion_tokens": 5565,
+      "predicted": 699,
+      "ground_truth": 699
+    },
+    {
+      "id": "2024-I-6",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 389.38940048217773,
+      "completion_tokens": 5260,
+      "predicted": 294,
+      "ground_truth": 294
+    },
+    {
+      "id": "2024-I-13",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 654.35289311409,
+      "completion_tokens": 8683,
+      "predicted": 110,
+      "ground_truth": 110
+    },
+    {
+      "id": "2024-I-15",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1285.6871554851532,
+      "completion_tokens": 15644,
+      "predicted": 721,
+      "ground_truth": 721
+    },
+    {
+      "id": "2024-II-15",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-II-10",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 668.1500487327576,
+      "completion_tokens": 8346,
+      "predicted": 468,
+      "ground_truth": 468
+    },
+    {
+      "id": "2024-II-9",
+      "ok": false,
+      "error": ""
+    },
+    {
+      "id": "2024-II-14",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 2350.8735814094543,
+      "completion_tokens": 31916,
+      "predicted": 211,
+      "ground_truth": 211
+    },
+    {
+      "id": "2024-II-5",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 917.6926653385162,
+      "completion_tokens": 12350,
+      "predicted": 80,
+      "ground_truth": 80
+    },
+    {
+      "id": "2024-I-9",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1481.377804517746,
+      "completion_tokens": 20645,
+      "predicted": 480,
+      "ground_truth": 480
+    },
+    {
+      "id": "2024-II-2",
+      "ok": false,
+      "finish_reason": "length",
+      "wall_s": 3561.511691570282,
+      "completion_tokens": 65036,
+      "predicted": null,
+      "ground_truth": 236
+    },
+    {
+      "id": "2024-II-1",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 158.13782405853271,
+      "completion_tokens": 2156,
+      "predicted": 73,
+      "ground_truth": 73
+    },
+    {
+      "id": "2024-I-10",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1363.9476466178894,
+      "completion_tokens": 18805,
+      "predicted": 113,
+      "ground_truth": 113
+    },
+    {
+      "id": "2024-II-8",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1427.860823392868,
+      "completion_tokens": 19472,
+      "predicted": 127,
+      "ground_truth": 127
+    },
+    {
+      "id": "2024-I-14",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 2461.2851395606995,
+      "completion_tokens": 36592,
+      "predicted": 104,
+      "ground_truth": 104
+    },
+    {
+      "id": "2024-I-5",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 1521.0788159370422,
+      "completion_tokens": 20880,
+      "predicted": 104,
+      "ground_truth": 104
+    },
+    {
+      "id": "2024-II-13",
+      "ok": true,
+      "finish_reason": "stop",
+      "wall_s": 569.18115067482,
+      "completion_tokens": 7942,
+      "predicted": 321,
+      "ground_truth": 321
+    }
+  ]
+}

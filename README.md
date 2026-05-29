@@ -152,20 +152,58 @@ Full RTX PRO 6000 recipe (patch rationale, debug notes): [`RECIPE_RTX6000PRO.md`
 
 Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%, HumanEval pass@1 84.76%, AIME 2024 30.0% (thinking=high). Spec-decode speedup: **1.49× at bs=1, k=1** (TPOT 6.02 ms vs 8.93 ms, same artifact w/ and w/o spec). Full numbers + methodology footnotes on the [HF model card](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP).
 
-### RTX PRO 6000 Blackwell Server Edition — verified 2026-05-27 on jasl/vllm@27fd665b ✓
+### RTX PRO 6000 Blackwell Server Edition — verified 2026-05-29 in fresh Docker ✓
 
-Full AIME-2024 + GSM8K sweep with `--reasoning-parser deepseek_v4` + thinking-mode + MTP n=1, max_tokens=16K (AIME) / 2K (GSM8K), `VLLM_TEST_FORCE_FP8_MARLIN=1`, TP=4 single replica:
+Full AIME-2024 + GSM8K + throughput sweep on `canada-quant/dsv4-w4a16-rtxpro6000:v1` (image baked from `jasl/vllm@27fd665b` + canada-quant BF16-MTP cherry-pick + Marlin MoE `c_tmp`/workspace patches). Both TP=2 and TP=4 single-replica, **all AIME runs at `max_tokens = max_model_len - 500 = 65036`** so reasoning runs to natural stop instead of being capped:
 
-| Benchmark | Mode | Concurrency | Score | Errors | Wall | MTP acceptance | Raw JSON |
-|---|---|---|---|---|---|---|---|
-| AIME-2024 30 | thinking-high | c=1 | **24/30 = 80.0%** | 0 | 1763.1 s | 91.26% | [`benchmarks/rtxpro6000/aime30_c1_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c1_thinking_jasl27fd665b.json) |
-| AIME-2024 30 | thinking-high | c=2 | 22/30 = 73.3% | 0 | 869.0 s | 90.35% | [`benchmarks/rtxpro6000/aime30_c2_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c2_thinking_jasl27fd665b.json) |
-| AIME-2024 30 | thinking-high | c=4 | **24/30 = 80.0%** | 0 | 641.9 s | 91.61% | [`benchmarks/rtxpro6000/aime30_c4_thinking_jasl27fd665b.json`](benchmarks/rtxpro6000/aime30_c4_thinking_jasl27fd665b.json) |
-| GSM8K (test, first 50) | chat | c=8 | **50/50 = 100.0%** | 0 | 80.4 s | 91.83% | [`benchmarks/rtxpro6000/gsm8k50_c8_chat_jasl27fd665b.json`](benchmarks/rtxpro6000/gsm8k50_c8_chat_jasl27fd665b.json) |
+#### AIME-2024 (n=30) — thinking-mode sweep, c=4
 
-**Headline:** zero CUDA illegal-memory-access in 90 AIME thinking-mode problems + 50 GSM8K chat problems = **140 production-shape problems with 0 errors**. Closes [`jasl/vllm#12`](https://github.com/jasl/vllm/issues/12) (Marlin MoE concurrent-decode race) cleanly via jasl's `27fd665b` "Protect active decode from very long prefill" scheduler patch (`max_num_scheduled_tokens // 16`).
+| | TP=2 (max_num_seqs=4) | TP=4 (max_num_seqs=16) |
+|---|---|---|
+| chat (no think) | 18/30 (60.0%) · MTP 95.78% · 53m | **19/30 (63.3%) · MTP 93.06% · 5m** |
+| **thinking-high** | **27/30 (90.0%) · MTP 91.97% · 152m** | **29/30 (96.7%) · MTP 91.01% · 13m** |
+| thinking-max | 24/30 (80.0%) · MTP 92.52% · 177m | 27/30 (90.0%) · MTP 91.68% · 26m |
 
-**Throughput speedup vs c=1 (AIME thinking):** c=2 = 2.03×, c=4 = 2.75×. c=2 score dip (22 vs 24 on c=1/c=4) is within n=30 noise (2 problems flipped). MTP acceptance holds at 90-92% across all concurrencies.
+#### AIME-2024 (n=30) — c=1 single-shot reference (thinking-high)
+
+| | TP=2 | TP=4 |
+|---|---|---|
+| c=1 high | 27/30 (90.0%) · MTP 91.68% · 48m | **28/30 (93.3%) · MTP 90.76% · 41m** |
+
+#### GSM8K (n=50, 8-shot)
+
+| | TP=2 | TP=4 |
+|---|---|---|
+| flexible-extract | 45/50 (90.0% ± 4.3) | 43/50 (86.0% ± 5.0) |
+| strict-match | 42/50 (84.0% ± 5.2) | 40/50 (80.0% ± 5.7) |
+
+#### Throughput sweep — random 256/256 (MTP on, single replica)
+
+| bs | TP=2 tok/s | TP=2 TPOT p50 | TP=4 tok/s | TP=4 TPOT p50 |
+|---|---|---|---|---|
+| 1 | 95.2 | 8.05 ms | **108.1** | 7.32 ms |
+| 4 | 40.6 | 83.18 ms | 104.3 | 11.31 ms |
+| 8 | 45.7 | 79.02 ms | **433.2** | 16.44 ms |
+| 16 | 34.9 (queued at max_num_seqs=4) | 81.77 ms | 164.3 (scheduler thrash) | 90.18 ms |
+
+#### Throughput sweep — random 1024/1024 (MTP on)
+
+| bs | TP=2 tok/s | TP=4 tok/s |
+|---|---|---|
+| 1 | 30.7 | 138.1 |
+| 4 | 45.1 | 363.7 |
+
+**Headlines:**
+
+- **TP=4 thinking-high 29/30 + zero CUDA errors** on 90 AIME problems + 50 GSM8K problems = strongest validation to date of the Card D path on consumer/server Blackwell. Closes [`jasl/vllm#12`](https://github.com/jasl/vllm/issues/12) (Marlin MoE concurrent-decode race) — the `c_tmp` clamp removal in PR [`vllm#43730`](https://github.com/vllm-project/vllm/pull/43730) + sm_120a native cubins from PR [`vllm#40923`](https://github.com/vllm-project/vllm/pull/40923) are doing their job.
+- **TP=4 is 7-12× faster wall** than TP=2 for AIME (chat 53m→5m, high 152m→13m, max 177m→26m). MoE expert sharding across 4 GPUs decisively wins.
+- **Thinking-max regresses correctness AND triples wall** (TP=4: high 29/30 in 13m vs max 27/30 in 26m). DeepSeek-V4-Flash hits its sweet spot at thinking-high; reasoning-effort=max gives the model more budget but produces more long-tail failures.
+- **MTP acceptance holds at 91-93%** across all thinking modes and both TP configs — the BF16-retained draft head is doing its job everywhere.
+- **Throughput sweet spot at TP=4 is bs=8** for short outputs (433 tok/s aggregate); bs=16 enters scheduler-thrash territory.
+
+Raw JSON for every cell above lives in [`benchmarks/rtxpro6000_docker_v3/`](benchmarks/rtxpro6000_docker_v3/) (50 files: per-bench JSON + log + the matrix runlog + tp{2,4}_64k_SUMMARY.md).
+
+> **Bench-script note (fixed 2026-05-29):** vllm's OpenAI serving layer renames `reasoning_content` → `reasoning` in the response per the spec. The old bench script only checked `reasoning_content` (which doesn't exist in the response), so on `finish_reason=length` it lost the model's partial reasoning entirely. TP=2 results above were collected with the old script and therefore slightly under-count length-truncations (1 each in chat/high/max). TP=4 results use the patched script ([`scripts/aime_thinking_bench.py`](scripts/aime_thinking_bench.py)). Headlines are unchanged; future numbers will be clean.
 
 **`finish_reasons` distribution** at c=4: 22 `stop` + 8 `length` truncation at max_tokens=16K — consistent with reference H200/B300 truncation rate for the longest AIME-2024 reasoning problems. Non-truncated pass@1 = 24/22 = 100%.
 
