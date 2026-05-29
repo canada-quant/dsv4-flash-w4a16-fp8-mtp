@@ -203,6 +203,38 @@ Full AIME-2024 + GSM8K + throughput sweep on `canada-quant/dsv4-w4a16-rtxpro6000
 
 Raw JSON for every cell above lives in [`benchmarks/rtxpro6000_docker_v3/`](benchmarks/rtxpro6000_docker_v3/) (50 files: per-bench JSON + log + the matrix runlog + tp{2,4}_64k_SUMMARY.md).
 
+#### Max context window (TP=2, max_num_seqs=2, MTP retained) — empirical ceiling
+
+Walking `max_model_len` to find where TP=2 + MTP + gpu_memory_utilization=0.95 stops fitting on 2× RTX PRO 6000 (97.9 GiB/GPU). Each step is a fresh container restart + smoke test:
+
+| max_model_len | Loaded? | VRAM/GPU | Available KV cache | Notes |
+|---|---|---|---|---|
+| 64K | ✓ | 93 GiB | — | the throughput config |
+| 128K | ✓ | 93 GiB | — | doubles cheap |
+| 256K | ✓ | 93 GiB | — | initial warmup 6.4 min |
+| 384K | ✓ | 93 GiB | — | |
+| 512K | ✓ | 93 GiB | — | |
+| **1M (1,048,576)** | **✓ — architectural max** | **93 GiB** | **8.04 GiB** | the model's `max_position_embeddings` cap |
+
+**Result: TP=2 + W4A16 + FP8 attention + BF16 MTP retained serves the full architectural 1M token context on 2× RTX PRO 6000 Blackwell** — same VRAM footprint as the 64K config because vllm sizes KV cache to fill `gpu_memory_utilization` regardless.
+
+Caveats:
+- vllm requires `cudagraph_capture_sizes` to be multiples of 2 when MTP `num_speculative_tokens=1` is active (each step processes main + draft). Effective minimum is `max_num_seqs=2`.
+- At 1M context with 8 GiB KV cache budget, only **one sequence can actually fill the full window at once** (~4 KB/token effective FP8 MLA + Lightning Indexer ≈ 4 GiB per 1M tokens). The second `max_num_seqs` slot exists for cudagraph rounding only — under sustained 1M-tokens-per-request workload, plan for effective concurrency = 1.
+- Prefill latency at 1M tokens is ~8-12 minutes per request even on TP=2 Blackwell. **Long-context is a single-user interactive operating mode, not a throughput config.** Use the 64K + max_num_seqs=4/8/16 profiles for throughput.
+
+Two recommended serve profiles:
+
+```bash
+# Throughput / interactive multi-user (sweet spot)
+docker run ... -e TP=4 -e MAX_NUM_SEQS=16 -e MAX_MODEL_LEN=65536 -e GPU_MEM_UTIL=0.95 ...
+# ⇒ 29/30 AIME thinking-high, 433 tok/s aggregate at bs=8, 7-12× faster than TP=2
+
+# Long-context single-user (architectural max)
+docker run ... --gpus '"device=0,1"' -e TP=2 -e MAX_NUM_SEQS=2 -e MAX_MODEL_LEN=1048576 -e GPU_MEM_UTIL=0.95 ...
+# ⇒ full 1M context with MTP retained on 2× RTX PRO 6000
+```
+
 > **Bench-script note (fixed 2026-05-29):** vllm's OpenAI serving layer renames `reasoning_content` → `reasoning` in the response per the spec. The old bench script only checked `reasoning_content` (which doesn't exist in the response), so on `finish_reason=length` it lost the model's partial reasoning entirely. TP=2 results above were collected with the old script and therefore slightly under-count length-truncations (1 each in chat/high/max). TP=4 results use the patched script ([`scripts/aime_thinking_bench.py`](scripts/aime_thinking_bench.py)). Headlines are unchanged; future numbers will be clean.
 
 **`finish_reasons` distribution** at c=4: 22 `stop` + 8 `length` truncation at max_tokens=16K — consistent with reference H200/B300 truncation rate for the longest AIME-2024 reasoning problems. Non-truncated pass@1 = 24/22 = 100%.
