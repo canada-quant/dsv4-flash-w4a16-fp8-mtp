@@ -115,9 +115,11 @@ if [ -z "${SKIP_GSM:-}" ]; then
     OUT="$OUT_DIR/${TAG}_gsm8k50_c8.json"
     LOG="$OUT_DIR/${TAG}_gsm8k50_c8.log"
     log "GSM8K-50 c=8 → $OUT"
+    # Ensure tenacity is available (lm_eval[api] dep). Install is a no-op if present.
+    pip install --quiet tenacity 2>/dev/null || true
     lm_eval --model local-completions \
         --tasks gsm8k \
-        --model_args "model=${MODEL_NAME},base_url=${BASE_URL}/v1/completions,num_concurrent=8,max_retries=3,tokenized_requests=False" \
+        --model_args "model=${MODEL_NAME},base_url=${BASE_URL}/v1/completions,num_concurrent=8,max_retries=3,tokenized_requests=False,tokenizer=${MODEL_ID}" \
         --num_fewshot 8 \
         --limit 50 \
         --output_path "$OUT" > "$LOG" 2>&1 || log "  GSM8K failed"
