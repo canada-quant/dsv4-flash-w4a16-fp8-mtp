@@ -1,7 +1,7 @@
 #!/bin/bash
-OUT=/opt/dlami/nvme/bench-tp2
-BASE=http://127.0.0.1:8000
-M=DSV4-NVFP4-FP8-MTP
+OUT="${OUT:-/opt/dlami/nvme/bench-tp2}"
+BASE="${BASE:-http://127.0.0.1:8000}"
+M="${MODEL_NAME:-DSV4-W4A16-FP8-MTP}"
 
 echo "=== SMOKE 1: math ==="
 time curl -s -X POST $BASE/v1/chat/completions -H "Content-Type: application/json" \
