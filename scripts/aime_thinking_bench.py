@@ -132,16 +132,28 @@ async def one_request(
                 data = await resp.json()
             dt = time.time() - t0
             choice = data["choices"][0]
-            content = (
-                choice.get("message", {}).get("content")
-                or choice.get("message", {}).get("reasoning_content")
+            msg = choice.get("message", {}) or {}
+            content_field = msg.get("content") or ""
+            # vllm's OpenAI serving layer renames reasoning_content → reasoning per
+            # the OpenAI spec. On thinking-mode length-truncated responses content
+            # is null because no </think> was emitted; the entire model output sits
+            # in `reasoning`. Pull from reasoning when content is empty so we can
+            # still extract a "Answer: NNN" the model may have written partway.
+            reasoning_field = (
+                msg.get("reasoning")
+                or msg.get("reasoning_content")  # legacy field name
                 or ""
             )
+            content = content_field if content_field else reasoning_field
             return {
                 "ok": True,
                 "wall_s": dt,
                 "finish_reason": choice.get("finish_reason"),
                 "content": content,
+                "reasoning_present": bool(reasoning_field),
+                "content_present": bool(content_field),
+                "reasoning_chars": len(reasoning_field),
+                "content_chars": len(content_field),
                 "completion_tokens": data.get("usage", {}).get("completion_tokens", 0),
             }
         except Exception as e:
@@ -200,6 +212,10 @@ async def run(args):
             "finish_reason": fr,
             "wall_s": r["wall_s"],
             "completion_tokens": r.get("completion_tokens", 0),
+            "reasoning_present": r.get("reasoning_present"),
+            "content_present": r.get("content_present"),
+            "reasoning_chars": r.get("reasoning_chars"),
+            "content_chars": r.get("content_chars"),
             "predicted": pred,
             "ground_truth": gt,
         })
