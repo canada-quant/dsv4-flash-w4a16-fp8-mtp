@@ -20,13 +20,25 @@ pretty_name: DSv4-Flash W4A16+FP8+MTP — RTX PRO 6000 Docker image
 
 Pre-built Docker image (`canada-quant/dsv4-w4a16-rtxpro6000:v1`) that serves
 [`canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP`](https://huggingface.co/canada-quant/DeepSeek-V4-Flash-W4A16-FP8-MTP)
-on **RTX PRO 6000 Blackwell Server Edition (SM 12.0)** out of the box.
+on **RTX PRO 6000 Blackwell (SM 12.0a)** out of the box.
 
 > Why this image exists: the W4A16 artifact needs a tightly-pinned vLLM build
 > (`jasl/vllm@27fd665b` + canada-quant BF16-MTP cherry-pick + ~13 layers of
 > dependency/patch fixes) to serve correctly on consumer/server Blackwell.
 > Rebuilding all that on a fresh box is ~25 min of friction we already paid;
 > this image saves you that time.
+
+> **Hardware coverage:** image was directly verified on **RTX PRO 6000 Blackwell
+> Server Edition** (Brev `g7e.24xlarge`, 4× 97 GB Server cards, TP=2 and TP=4)
+> with the full bench matrix (AIME-2024 chat/high/max c=4, GSM8K-50, throughput
+> sweep, max-context walk to architectural 1M). It's **expected to work on
+> Workstation Edition** (same SM 12.0a, same Marlin native cubins, same model)
+> but we haven't directly run it ourselves. Reference TP=2 Workstation numbers
+> from jasl's bench harness (`jasl/vllm-ds4-sm120-harness/baselines/20260512_sm120_deployment_1c20f1a6d`)
+> confirm the underlying stack runs on Workstation Edition. Expect a 5-15%
+> throughput delta vs Server numbers from clock/memory-bandwidth differences.
+> If anything misbehaves on Workstation Edition, please open a discussion or
+> a PR in [the repo](https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp).
 
 ## Quickstart
 
@@ -113,6 +125,50 @@ Env defaults baked in:
 See [`canada-quant/dsv4-flash-w4a16-fp8-mtp`](https://github.com/canada-quant/dsv4-flash-w4a16-fp8-mtp)
 README for the full bench matrix (AIME-2024 thinking-mode sweep at chat/high/max
 across c=1/4, GSM8K-50 c=8, throughput sweep) on TP=2 and TP=4.
+
+Two recommended serve profiles:
+
+```bash
+# Throughput / interactive multi-user (Server Edition, 4× cards)
+docker run -d --gpus all --name dsv4-w4a16-serve \
+    --shm-size=16g --ipc=host -p 8000:8000 \
+    -v /path/to/nvme/hf-cache:/root/.cache/huggingface \
+    -v $(pwd)/scripts:/workspace/scripts:ro \
+    -e TP=4 -e MAX_NUM_SEQS=16 -e MAX_MODEL_LEN=65536 -e GPU_MEM_UTIL=0.95 \
+    canada-quant/dsv4-w4a16-rtxpro6000:v1 \
+    bash /workspace/scripts/serve_rtx6000pro_w4a16.sh
+# ⇒ 29/30 AIME thinking-high, 433 tok/s aggregate at bs=8
+
+# Long-context single-user (Server or Workstation, 2× cards)
+docker run -d --gpus '"device=0,1"' --name dsv4-w4a16-serve \
+    --shm-size=16g --ipc=host -p 8000:8000 \
+    -v /path/to/nvme/hf-cache:/root/.cache/huggingface \
+    -v $(pwd)/scripts:/workspace/scripts:ro \
+    -e TP=2 -e MAX_NUM_SEQS=2 -e MAX_MODEL_LEN=1048576 -e GPU_MEM_UTIL=0.95 \
+    canada-quant/dsv4-w4a16-rtxpro6000:v1 \
+    bash /workspace/scripts/serve_rtx6000pro_w4a16.sh
+# ⇒ full 1M architectural max context with MTP retained
+```
+
+## Tuning notes (read before deviating from defaults)
+
+The image's defaults — `serve_rtx6000pro_w4a16.sh` with TP=2 or TP=4 + the
+env vars baked in — are optimal for **RTX PRO 6000 Server Edition + TP=4**
+as of 2026-05-29. We A/B-tested adopting jasl's TP=2 Workstation env tunings
+(from `jasl/vllm-ds4-sm120-harness/configs/sm120_tp2_serve.env.example`) at
+TP=4 Server and ALL of them regressed; don't import them blindly:
+
+| Setting that wins on TP=2 Workstation | Effect on TP=4 Server | Verdict |
+|---|---|---|
+| `--speculative-config '{"method":"deepseek_mtp","num_speculative_tokens":2}'` (MTP k=2) | **−86% bs=8 throughput** (433 → 60 tok/s) | k=1 (`"method":"mtp"`) is the right default for TP=4. k=2's 2x main-model cost amplifies all-reduce overhead past the ~1.5 tokens/draft acceptance benefit on a 4-GPU collective. |
+| `--enable-expert-parallel` | makes the above worse | TP=4 all-to-all expert-gather is expensive. |
+| `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=512` + `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=512` | **CUDA illegal memory access** during cudagraph capture | These chunk sizes are tuned for SM 12.0a c128a Workstation single-request prefill; they exceed safe limits at TP=4 Server. Leave unset on TP=4 Server. |
+| `--no-enable-flashinfer-autotune` | **−74% bs=8** (433 → 111 tok/s) | The Triton block-FP8 autotune is load-bearing at TP=4. Leave autotune ON. |
+| `--gpu-memory-utilization 0.985` | crash potential at TP=4 (esp. combined with sparse-MLA env) | 0.95 is the safe value the image ships with. |
+
+If you're deploying on **TP=2 Workstation Edition** instead, jasl's reference
+config (`sm120_tp2_serve.env.example`) is the right starting point — it was
+tuned on that exact hardware/topology.
 
 ## License
 

@@ -154,6 +154,8 @@ Quality (same artifact, all hardware): GSM8K 93.71% (8-shot strict), MMLU 86.88%
 
 ### RTX PRO 6000 Blackwell Server Edition — verified 2026-05-29 in fresh Docker ✓
 
+> **Hardware coverage:** all numbers below are from **RTX PRO 6000 Blackwell Server Edition (SM 12.0a)** on a Brev `g7e.24xlarge`. The image is **expected to work on Workstation Edition (same SM 12.0a, same Marlin native cubins, same model + serve path)** but we have not directly verified it ourselves. Reference TP=2 Workstation numbers from jasl's bench harness (`jasl/vllm-ds4-sm120-harness/baselines/20260512_sm120_deployment_1c20f1a6d`) confirm the underlying stack runs on Workstation Edition. Expect a 5-15% throughput delta vs the Server Edition numbers here due to clock and memory-bandwidth differences. If anything misbehaves on Workstation Edition, please open an issue.
+
 Full AIME-2024 + GSM8K + throughput sweep on `canada-quant/dsv4-w4a16-rtxpro6000:v1` (image baked from `jasl/vllm@27fd665b` + canada-quant BF16-MTP cherry-pick + Marlin MoE `c_tmp`/workspace patches). Both TP=2 and TP=4 single-replica, **all AIME runs at `max_tokens = max_model_len - 500 = 65036`** so reasoning runs to natural stop instead of being capped:
 
 #### AIME-2024 (n=30) — thinking-mode sweep, c=4
@@ -234,6 +236,20 @@ docker run ... -e TP=4 -e MAX_NUM_SEQS=16 -e MAX_MODEL_LEN=65536 -e GPU_MEM_UTIL
 docker run ... --gpus '"device=0,1"' -e TP=2 -e MAX_NUM_SEQS=2 -e MAX_MODEL_LEN=1048576 -e GPU_MEM_UTIL=0.95 ...
 # ⇒ full 1M context with MTP retained on 2× RTX PRO 6000
 ```
+
+#### Tuning attempts that DID NOT win on TP=4 Server Edition (documenting so you don't repeat them)
+
+We A/B-tested several settings that jasl's TP=2 Workstation reference (`jasl/vllm-ds4-sm120-harness/configs/sm120_tp2_serve.env.example` + baseline `20260512_sm120_deployment_1c20f1a6d`) recommends — none of them transferred to our TP=4 Server config. Stick with the v3 image defaults.
+
+| Change from defaults | Result | Why we think it didn't transfer |
+|---|---|---|
+| `--speculative-config '{"method":"deepseek_mtp","num_speculative_tokens":2}'` (jasl's MTP=2) | **bs=8 = 60 tok/s (−86%)** | jasl's Workstation TP=2 baseline shows +54% for MTP=2; the 2x main-model forward cost amplifies all-reduce overhead at TP=4 past the ~1.5 tokens-accepted-per-draft gain. k=1 (`"method":"mtp","num_speculative_tokens":1`) wins at TP=4. |
+| `--enable-expert-parallel` (jasl recommends) | combined with MTP=2 above, similarly bad | TP=4's all-to-all expert-gather is more expensive than TP=2's. |
+| `VLLM_TRITON_MLA_SPARSE_QUERY_CHUNK_SIZE=512` + `VLLM_TRITON_MLA_SPARSE_TOPK_CHUNK_SIZE=512` (jasl's "long-context-friendly" sparse-MLA chunks) | **CUDA illegal memory access during cudagraph capture** | These chunk sizes are tuned for SM 12.0a c128a Workstation single-request prefill. At TP=4 Server they exceed safe limits — sparse-MLA env logic in `vllm/v1/attention/backends/mla/sparse_mla_env.py` already caps multi-request multi-rank at 256. Leave the sparse-MLA env unset on TP=4 Server. |
+| `--no-enable-flashinfer-autotune` (jasl recommends) | **bs=8 = 111 tok/s (−74%), bs=16 = 134 tok/s (−18%)** | The Triton block-FP8 autotune path is load-bearing at TP=4 Server — disabling it locks in default tile sizes that don't match the 4-GPU all-reduce shape. Leave flashinfer autotune ON. |
+| `--gpu-memory-utilization 0.985` (jasl recommends 0.985 for Workstation cards w/ no display) | crash potential when combined with sparse-MLA env | Marginal headroom at TP=4 Server; 0.95 is the safe value our v3 image ships with. |
+
+Net: **the published Docker image's defaults are optimal for TP=4 RTX PRO 6000 Server Edition serving DSv4-Flash W4A16+FP8+MTP** as of 2026-05-29. For TP=2 Workstation Edition deployments, see jasl's bench harness for hardware-matched env vars instead.
 
 > **Bench-script note (fixed 2026-05-29):** vllm's OpenAI serving layer renames `reasoning_content` → `reasoning` in the response per the spec. The old bench script only checked `reasoning_content` (which doesn't exist in the response), so on `finish_reason=length` it lost the model's partial reasoning entirely. TP=2 results above were collected with the old script and therefore slightly under-count length-truncations (1 each in chat/high/max). TP=4 results use the patched script ([`scripts/aime_thinking_bench.py`](scripts/aime_thinking_bench.py)). Headlines are unchanged; future numbers will be clean.
 
